@@ -1,0 +1,414 @@
+---
+title: Internationalization
+description: Create resumes in multiple languages with pre-populated example data
+---
+
+## Overview
+
+Vitaes supports creating resumes in multiple languages, each with localized example data to help you get started quickly. The application interface is also fully internationalized, adapting to your preferred language.
+
+## Supported Languages
+
+Vitaes currently supports seven languages:
+
+<CardGroup cols={2}>
+  <Card title="English (en)" icon="language">
+    Default language with Kendall Roy example data
+  </Card>
+  <Card title="Spanish (es)" icon="language">
+    Íñigo Montoya example data
+  </Card>
+  <Card title="French (fr)" icon="language">
+    Arsène Lupin example data
+  </Card>
+  <Card title="German (de)" icon="language">
+    King Schultz example data
+  </Card>
+  <Card title="Japanese (ja)" icon="language">
+    Gol D. Roger example data
+  </Card>
+  <Card title="Portuguese (pt)" icon="language">
+    Agostinho Carrara example data
+  </Card>
+  <Card title="Chinese (zh)" icon="language">
+    Sun Tzu example data
+  </Card>
+</CardGroup>
+
+## Language Selection
+
+You can select a language in two contexts:
+
+### 1. When Creating a Resume
+
+When creating a new resume, you choose the language for the initial example data:
+
+```typescript
+export const appRouter = {
+  createResume: protectedProcedure
+    .input(
+      z.object({
+        name: z.string(),
+        language: z.enum(Object.keys(exampleResumes) as [string, ...string[]]),
+        template: TemplateSchema.optional(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const { name, language, template = 'awesome' } = input
+      const exampleResume =
+        exampleResumes[language as keyof typeof exampleResumes]
+
+      const initialData = {
+        ...exampleResume,
+        config: {
+          ...exampleResume.config,
+          template,
+        },
+      }
+
+      const currentUser = context.session.user
+      const [createdResume] = await db
+        .insert(resume)
+        .values({
+          id: uuidv7(),
+          name,
+          userEmail: currentUser.email,
+          data: initialData,
+          slug: uniqueSlug(currentUser.email, name),
+        })
+        .returning()
+
+      return createdResume
+    }),
+}
+```
+
+<Info>
+  The language you select determines which example data is used to pre-populate your new resume. You can edit all content freely after creation.
+</Info>
+
+### 2. UI Language Selection
+
+The application interface language can be changed independently:
+
+```typescript
+import { LanguageSelector } from './language-selector'
+
+<LanguageSelector />
+```
+
+The UI language affects:
+- Button labels
+- Form field names
+- Dialog messages
+- Validation errors
+- Navigation items
+
+## Example Data Structure
+
+Each language has a complete resume example with culturally appropriate content:
+
+```typescript
+export const exampleResumes = {
+  en: kendallRoyNew,
+  es: inigoMontoyaNew,
+  fr: arseneLupinNew,
+  de: kingSchultzNew,
+  ja: golDRogerNew,
+  pt: agostinhoCarraraResume,
+  zh: sunTzuNew,
+}
+```
+
+### Spanish Example Data (es)
+
+```typescript
+export const inigoMontoyaNew: IResume = {
+  config: {
+    themeColor: 'awesome-emerald',
+    headerAlign: 'left',
+    sectionColorHighlight: true,
+    fontSize: 9,
+    pageSize: 'A4',
+    // ...
+  },
+
+  personalInfo: {
+    firstName: 'Íñigo',
+    lastName: 'Montoya',
+    position: 'Maestro de Esgrima',
+    address: 'Toledo, España',
+    quote: 'La dedicación y la práctica perfeccionan cualquier arte.',
+    socials: [
+      {
+        id: 'phone',
+        platform: 'mobile',
+        value: '+34-91-123-4567',
+      },
+      {
+        id: 'email',
+        platform: 'email',
+        value: 'inigo.montoya@esgrima.es',
+      },
+    ],
+  },
+
+  sections: [
+    {
+      id: 'summary',
+      title: 'Resumen',
+      type: 'text',
+      content:
+        'Maestro de esgrima con más de 20 años de experiencia en la enseñanza y práctica de artes marciales históricas.',
+    },
+    {
+      id: 'experience',
+      title: 'Experiencia Laboral',
+      type: 'timeline',
+      entries: [
+        {
+          id: 'fencing-academy',
+          position: 'Director y Maestro Principal',
+          title: 'Academia de Esgrima Montoya',
+          location: 'Toledo, España',
+          date: '2015-01-01 — present',
+          items: [
+            'Formación de más de 200 estudiantes en esgrima histórica.',
+            'Preparación de campeones nacionales e internacionales.',
+          ],
+        },
+      ],
+    },
+    {
+      id: 'languages',
+      title: 'Idiomas',
+      type: 'taxonomy',
+      categories: [
+        {
+          id: 'spanish',
+          type: 'Español',
+          items: ['Nativo'],
+        },
+        {
+          id: 'english',
+          type: 'Inglés',
+          items: ['Avanzado'],
+        },
+      ],
+    },
+  ],
+}
+```
+
+## Example Data Files
+
+Example data is stored in separate files for maintainability:
+
+```
+packages/types/src/example-data/
+├── en.ts    # English - Kendall Roy (business executive)
+├── es.ts    # Spanish - Íñigo Montoya (fencing master)
+├── fr.ts    # French - Arsène Lupin (gentleman thief)
+├── de.ts    # German - King Schultz (bounty hunter)
+├── ja.ts    # Japanese - Gol D. Roger (pirate king)
+├── pt.ts    # Portuguese - Agostinho Carrara (various roles)
+└── zh.ts    # Chinese - Sun Tzu (military strategist)
+```
+
+Each file exports a complete `IResume` object with:
+- Personal information in the target language
+- Multiple sections demonstrating different section types
+- Culturally appropriate content and formatting
+- Proper date formats for the language/region
+
+## Localization Features
+
+### Section Titles
+
+Section titles are localized in example data:
+
+<Tabs>
+  <Tab title="English">
+    - Summary
+    - Work Experience
+    - Education
+    - Skills
+  </Tab>
+  <Tab title="Spanish">
+    - Resumen
+    - Experiencia Laboral
+    - Educación
+    - Habilidades
+  </Tab>
+  <Tab title="French">
+    - Résumé
+    - Expérience Professionnelle
+    - Formation
+    - Compétences
+  </Tab>
+</Tabs>
+
+### Date Formats
+
+Date formats follow regional conventions:
+
+```typescript
+// English/International
+date: '2018-01-01 — present'
+
+// Spanish
+date: '2015-01-01 — presente'
+
+// French
+date: '2015-01-01 — présent'
+```
+
+### Contact Information
+
+Phone numbers, addresses, and other location-specific data use appropriate formats:
+
+```typescript
+// Spanish example
+address: 'Toledo, España',
+value: '+34-91-123-4567',
+
+// French example
+address: 'Paris, France',
+value: '+33-1-42-86-82-00',
+```
+
+## UI Internationalization
+
+The application interface uses Paraglide for internationalization:
+
+```typescript
+import { m } from '@/paraglide/messages'
+
+// Usage in components
+<DialogTitle>{m['dialogs.createResume.title']()}</DialogTitle>
+<Button>{m['editor.download']()}</Button>
+<span>{m['editor.saving']()}</span>
+```
+
+### Message Examples
+
+```typescript
+// English
+m['editor.personalInfo']() // "Personal Info"
+m['editor.sections']() // "Sections"
+m['editor.saving']() // "Saving..."
+
+// Spanish
+m['editor.personalInfo']() // "Información Personal"
+m['editor.sections']() // "Secciones"
+m['editor.saving']() // "Guardando..."
+```
+
+## Creating Multilingual Resumes
+
+You can create resumes in multiple languages:
+
+1. **Create a resume** in your first language (e.g., English)
+2. **Duplicate the resume** from your dashboard
+3. **Edit the content** to translate all sections
+4. **Rename** to indicate the language (e.g., "Resume - English" and "Resume - Spanish")
+
+<Note>
+  Each resume is independent. You'll need to manually translate and maintain content across different language versions.
+</Note>
+
+## Best Practices
+
+<Accordion title="Choose the right example data">
+  Select the language that matches your target audience when creating a new resume. The example data provides a good starting point with appropriate formatting and structure.
+</Accordion>
+
+<Accordion title="Keep it consistent">
+  When creating multilingual versions of your resume, ensure all information is accurately translated and culturally appropriate.
+</Accordion>
+
+<Accordion title="Use proper date formats">
+  Follow the date format conventions for your target region (ISO format works universally).
+</Accordion>
+
+<Accordion title="Localize contact information">
+  Include international phone number prefixes and use address formats appropriate for the target country.
+</Accordion>
+
+<Accordion title="Consider cultural differences">
+  Different regions have different resume conventions (e.g., including photos, personal information, length expectations). Research these before finalizing your resume.
+</Accordion>
+
+## Language Selector Component
+
+The language selector in the header allows users to switch UI languages:
+
+```typescript
+import { LanguageSelector } from '@/components/language-selector'
+
+<BuilderHeader>
+  <LanguageSelector />
+</BuilderHeader>
+```
+
+This changes:
+- All UI text and labels
+- Form validation messages
+- Date formatting in the interface
+- Number formatting
+
+<Info>
+  Changing the UI language doesn't affect your resume content - only the interface. Your resume content remains in whatever language you've written it in.
+</Info>
+
+## Adding New Languages
+
+To add support for a new language:
+
+1. Create a new example data file in `packages/types/src/example-data/`
+2. Export a complete `IResume` object with localized content
+3. Add the new language to the `exampleResumes` object in `resume.ts`
+4. Add UI translations to the Paraglide message files
+5. Update the language selector to include the new option
+
+Example structure:
+
+```typescript
+// packages/types/src/example-data/it.ts
+import type { IResume } from '../resume'
+
+export const italianExample: IResume = {
+  config: { /* ... */ },
+  personalInfo: {
+    firstName: 'Marco',
+    lastName: 'Rossi',
+    position: 'Sviluppatore Software',
+    address: 'Roma, Italia',
+    // ...
+  },
+  sections: [
+    {
+      id: 'summary',
+      title: 'Riepilogo',
+      type: 'text',
+      content: '...',
+    },
+    // ...
+  ],
+}
+```
+
+Then update the exports:
+
+```typescript
+export const exampleResumes = {
+  en: kendallRoyNew,
+  es: inigoMontoyaNew,
+  fr: arseneLupinNew,
+  de: kingSchultzNew,
+  ja: golDRogerNew,
+  pt: agostinhoCarraraResume,
+  zh: sunTzuNew,
+  it: italianExample, // New language
+}
+```

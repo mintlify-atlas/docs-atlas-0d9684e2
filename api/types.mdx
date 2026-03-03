@@ -1,0 +1,758 @@
+---
+title: TypeScript Types
+description: Complete reference for all TypeScript types and Zod schemas in Vitaes
+---
+
+Vitaes uses [Zod](https://zod.dev) for runtime type validation. All types are defined in `@vitaes/types/resume`.
+
+## Core Types
+
+### ResumeSchema
+
+The main schema for a complete resume document.
+
+```typescript packages/types/src/resume.ts
+const ResumeInputSchema = z.object({
+  config: ResumeConfigInputSchema,
+  personalInfo: PersonalInfoSchema,
+  sections: z.array(SectionSchema),
+})
+
+export const ResumeSchema = ResumeInputSchema.transform((data) => ({
+  ...data,
+  config: {
+    ...data.config,
+    footerLeft: data.config.footerLeft ?? defaultFooterOption,
+    footerCenter: data.config.footerCenter ?? defaultFooterOption,
+    footerRight: data.config.footerRight ?? defaultFooterRight,
+  },
+}))
+
+export type IResume = z.infer<typeof ResumeSchema>
+```
+
+<Expandable title="Type Definition">
+  <ResponseField name="config" type="ResumeConfig">
+    Resume configuration including template, colors, and formatting options
+  </ResponseField>
+  
+  <ResponseField name="personalInfo" type="PersonalInfo">
+    Personal information including name, position, contact details, and photo
+  </ResponseField>
+  
+  <ResponseField name="sections" type="Section[]">
+    Array of content sections (text, timeline, list, or taxonomy)
+  </ResponseField>
+</Expandable>
+
+### ResumeValidationSchema
+
+Strict validation schema used for API inputs (no transforms).
+
+```typescript packages/types/src/resume.ts
+export const ResumeValidationSchema = z.object({
+  config: ResumeConfigValidationSchema,
+  personalInfo: PersonalInfoSchema,
+  sections: z.array(SectionSchema),
+})
+```
+
+---
+
+## Configuration
+
+### ResumeConfigSchema
+
+Configuration for resume appearance and layout.
+
+```typescript packages/types/src/resume.ts
+const ResumeConfigInputSchema = z.object({
+  template: TemplateSchema.optional(),
+  themeColor: AwesomeColorSchema,
+  headerAlign: z.enum(['left', 'center', 'right']),
+  sectionColorHighlight: z.boolean(),
+  fontSize: z.number().positive(),
+  pageSize: z.enum(['A4', 'LETTER']),
+  footerLeft: FooterOptionSchema.optional(),
+  footerCenter: FooterOptionSchema.optional(),
+  footerRight: FooterOptionSchema.optional(),
+})
+
+export const ResumeConfigSchema = ResumeConfigInputSchema.transform((data) => ({
+  ...data,
+  template: data.template ?? 'awesome',
+  footerLeft: data.footerLeft ?? defaultFooterOption,
+  footerCenter: data.footerCenter ?? defaultFooterOption,
+  footerRight: data.footerRight ?? defaultFooterRight,
+}))
+
+export type ResumeConfig = z.infer<typeof ResumeConfigSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="template" type="Template">
+    Resume template name. Defaults to `awesome`.
+  </ParamField>
+  
+  <ParamField path="themeColor" type="AwesomeColor" required>
+    Theme color for the resume
+  </ParamField>
+  
+  <ParamField path="headerAlign" type="'left' | 'center' | 'right'" required>
+    Header alignment
+  </ParamField>
+  
+  <ParamField path="sectionColorHighlight" type="boolean" required>
+    Whether to highlight section titles with theme color
+  </ParamField>
+  
+  <ParamField path="fontSize" type="number" required>
+    Base font size (must be positive)
+  </ParamField>
+  
+  <ParamField path="pageSize" type="'A4' | 'LETTER'" required>
+    Paper size for PDF export
+  </ParamField>
+  
+  <ParamField path="footerLeft" type="FooterOption">
+    Left footer configuration
+  </ParamField>
+  
+  <ParamField path="footerCenter" type="FooterOption">
+    Center footer configuration
+  </ParamField>
+  
+  <ParamField path="footerRight" type="FooterOption">
+    Right footer configuration (defaults to showing page numbers)
+  </ParamField>
+</Expandable>
+
+### TemplateSchema
+
+Available resume templates.
+
+```typescript packages/types/src/resume.ts
+export const TemplateSchema = z.enum([
+  'awesome',
+  'modern',
+  'professional',
+  'bold',
+])
+
+export type Template = z.infer<typeof TemplateSchema>
+```
+
+**Available templates:**
+- `awesome` - Default template with colorful accents
+- `modern` - Clean modern design
+- `professional` - Traditional professional style
+- `bold` - Bold and eye-catching
+
+### AwesomeColorSchema
+
+Theme colors for resumes.
+
+```typescript packages/types/src/colors.ts
+export const AwesomeColorSchema = z.enum([
+  'awesome-emerald',
+  'awesome-skyblue',
+  'awesome-red',
+  'awesome-pink',
+  'awesome-orange',
+  'awesome-nephritis',
+  'awesome-concrete',
+  'awesome-darknight',
+])
+
+export type AwesomeColor = z.infer<typeof AwesomeColorSchema>
+```
+
+**Color values:**
+- `awesome-emerald` - `#00A388`
+- `awesome-skyblue` - `#0395DE`
+- `awesome-red` - `#DC3522`
+- `awesome-pink` - `#EF4089`
+- `awesome-orange` - `#FF6138`
+- `awesome-nephritis` - `#27AE60`
+- `awesome-concrete` - `#95A5A6`
+- `awesome-darknight` - `#131A28`
+
+### FooterOptionSchema
+
+Configuration for footer sections.
+
+```typescript packages/types/src/resume.ts
+export const FooterOptionSchema = z.object({
+  text: z.string(),
+  showPageNumber: z.boolean(),
+})
+
+export type FooterOption = z.infer<typeof FooterOptionSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="text" type="string" required>
+    Custom text to display in footer
+  </ParamField>
+  
+  <ParamField path="showPageNumber" type="boolean" required>
+    Whether to show page numbers in this footer section
+  </ParamField>
+</Expandable>
+
+---
+
+## Personal Information
+
+### PersonalInfoSchema
+
+Personal details and contact information.
+
+```typescript packages/types/src/resume.ts
+export const PersonalInfoSchema = z.object({
+  firstName: z.string(),
+  lastName: z.string(),
+  position: z.string(),
+  address: z.string(),
+  socials: z.array(SocialProfileSchema),
+  quote: z.string().optional(),
+  photo: z
+    .object({
+      url: z.string().url(),
+      shape: z.enum(['circle', 'rectangle']).optional(),
+      edge: z.enum(['edge', 'noedge']).optional(),
+      align: z.enum(['left', 'right']).optional(),
+    })
+    .optional(),
+})
+
+export type PersonalInfo = z.infer<typeof PersonalInfoSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="firstName" type="string" required>
+    First name
+  </ParamField>
+  
+  <ParamField path="lastName" type="string" required>
+    Last name
+  </ParamField>
+  
+  <ParamField path="position" type="string" required>
+    Job title or professional position
+  </ParamField>
+  
+  <ParamField path="address" type="string" required>
+    Physical address or location
+  </ParamField>
+  
+  <ParamField path="socials" type="SocialProfile[]" required>
+    Array of social profiles and contact methods
+  </ParamField>
+  
+  <ParamField path="quote" type="string">
+    Optional personal quote or tagline
+  </ParamField>
+  
+  <ParamField path="photo" type="object">
+    Optional profile photo configuration
+    
+    <Expandable title="Photo Object">
+      <ParamField path="url" type="string" required>
+        URL to photo image
+      </ParamField>
+      
+      <ParamField path="shape" type="'circle' | 'rectangle'">
+        Photo shape
+      </ParamField>
+      
+      <ParamField path="edge" type="'edge' | 'noedge'">
+        Whether to show edge border
+      </ParamField>
+      
+      <ParamField path="align" type="'left' | 'right'">
+        Photo alignment in header
+      </ParamField>
+    </Expandable>
+  </ParamField>
+</Expandable>
+
+### SocialProfileSchema
+
+Social media profiles and contact methods.
+
+```typescript packages/types/src/resume.ts
+export const SocialPlatformSchema = z.enum([
+  'mobile',
+  'email',
+  'homepage',
+  'github',
+  'gitlab',
+  'linkedin',
+  'twitter',
+  'stackoverflow',
+  'skype',
+  'reddit',
+  'xing',
+  'medium',
+  'googlescholar',
+])
+
+export const SocialProfileSchema = z.object({
+  id: z.string(),
+  platform: SocialPlatformSchema,
+  value: z.string(),
+  display: z.string().optional(),
+  url: z.string().url().optional(),
+})
+
+export type SocialPlatform = z.infer<typeof SocialPlatformSchema>
+export type SocialProfile = z.infer<typeof SocialProfileSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="id" type="string" required>
+    Unique identifier for this social profile
+  </ParamField>
+  
+  <ParamField path="platform" type="SocialPlatform" required>
+    Platform type (mobile, email, github, linkedin, etc.)
+  </ParamField>
+  
+  <ParamField path="value" type="string" required>
+    The actual value (phone number, email address, username, etc.)
+  </ParamField>
+  
+  <ParamField path="display" type="string">
+    Optional custom display text
+  </ParamField>
+  
+  <ParamField path="url" type="string">
+    Optional full URL (auto-generated for some platforms)
+  </ParamField>
+</Expandable>
+
+**Supported platforms:**
+- `mobile` - Phone number
+- `email` - Email address
+- `homepage` - Personal website
+- `github` - GitHub profile
+- `gitlab` - GitLab profile
+- `linkedin` - LinkedIn profile
+- `twitter` - Twitter/X profile
+- `stackoverflow` - Stack Overflow profile
+- `skype` - Skype username
+- `reddit` - Reddit profile
+- `xing` - Xing profile
+- `medium` - Medium profile
+- `googlescholar` - Google Scholar profile
+
+---
+
+## Section Types
+
+Resumes are composed of sections. Each section has a type that determines its structure.
+
+### SectionSchema
+
+Discriminated union of all section types.
+
+```typescript packages/types/src/resume.ts
+export const SectionTypeSchema = z.enum([
+  'text',
+  'timeline',
+  'list',
+  'taxonomy',
+])
+
+export const SectionSchema = z.discriminatedUnion('type', [
+  TextSectionSchema,
+  TimelineSectionSchema,
+  ListSectionSchema,
+  TaxonomySectionSchema,
+])
+
+export type SectionType = z.infer<typeof SectionTypeSchema>
+export type Section = z.infer<typeof SectionSchema>
+```
+
+### BaseSectionSchema
+
+Common fields for all sections.
+
+```typescript packages/types/src/resume.ts
+export const BaseSectionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  type: SectionTypeSchema,
+})
+```
+
+<Expandable title="Fields">
+  <ParamField path="id" type="string" required>
+    Unique identifier for this section
+  </ParamField>
+  
+  <ParamField path="title" type="string" required>
+    Section title displayed in the resume
+  </ParamField>
+  
+  <ParamField path="type" type="SectionType" required>
+    Section type (text, timeline, list, or taxonomy)
+  </ParamField>
+</Expandable>
+
+### TextSectionSchema
+
+Simple text content section.
+
+```typescript packages/types/src/resume.ts
+export const TextSectionSchema = BaseSectionSchema.extend({
+  type: z.literal('text'),
+  content: z.string(),
+})
+
+export type TextSection = z.infer<typeof TextSectionSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="id" type="string" required>
+    Unique identifier
+  </ParamField>
+  
+  <ParamField path="title" type="string" required>
+    Section title (e.g., "About Me", "Summary")
+  </ParamField>
+  
+  <ParamField path="type" type="'text'" required>
+    Must be `'text'`
+  </ParamField>
+  
+  <ParamField path="content" type="string" required>
+    Text content (supports markdown)
+  </ParamField>
+</Expandable>
+
+**Use cases:**
+- Professional summary
+- About me section
+- Career objectives
+- Cover letter content
+
+### TimelineSectionSchema
+
+Timeline-based entries (jobs, education, etc.).
+
+```typescript packages/types/src/resume.ts
+export const EntryItemSchema = BaseItemSchema.extend({
+  position: z.string(),
+  title: z.string(),
+  location: z.string(),
+  date: z.string(),
+  description: z.string().optional(),
+  items: z.array(z.string()).optional(),
+})
+
+export const TimelineSectionSchema = BaseSectionSchema.extend({
+  type: z.literal('timeline'),
+  entries: z.array(EntryItemSchema),
+})
+
+export type EntryItem = z.infer<typeof EntryItemSchema>
+export type TimelineSection = z.infer<typeof TimelineSectionSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="id" type="string" required>
+    Unique identifier
+  </ParamField>
+  
+  <ParamField path="title" type="string" required>
+    Section title (e.g., "Experience", "Education")
+  </ParamField>
+  
+  <ParamField path="type" type="'timeline'" required>
+    Must be `'timeline'`
+  </ParamField>
+  
+  <ParamField path="entries" type="EntryItem[]" required>
+    Array of timeline entries
+    
+    <Expandable title="EntryItem">
+      <ParamField path="id" type="string" required>
+        Unique identifier for this entry
+      </ParamField>
+      
+      <ParamField path="position" type="string" required>
+        Job title or degree name
+      </ParamField>
+      
+      <ParamField path="title" type="string" required>
+        Company name or institution
+      </ParamField>
+      
+      <ParamField path="location" type="string" required>
+        Geographic location
+      </ParamField>
+      
+      <ParamField path="date" type="string" required>
+        Date or date range (e.g., "2020-2023", "Jan 2020 - Present")
+      </ParamField>
+      
+      <ParamField path="description" type="string">
+        Optional description or summary
+      </ParamField>
+      
+      <ParamField path="items" type="string[]">
+        Optional bullet points or achievements
+      </ParamField>
+    </Expandable>
+  </ParamField>
+</Expandable>
+
+**Use cases:**
+- Work experience
+- Education history
+- Volunteer work
+- Professional development
+
+### ListSectionSchema
+
+Structured list section with flat or grouped items.
+
+```typescript packages/types/src/resume.ts
+export const ListItemSchema = BaseItemSchema.extend({
+  date: z.string(),
+  position: z.string(),
+  title: z.string(),
+  location: z.string(),
+})
+
+export const ListSubsectionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  items: z.array(ListItemSchema),
+})
+
+export const ListSectionSchema = BaseSectionSchema.extend({
+  type: z.literal('list'),
+  structure: z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('flat'),
+      items: z.array(ListItemSchema),
+    }),
+    z.object({
+      type: z.literal('grouped'),
+      subsections: z.array(ListSubsectionSchema),
+    }),
+  ]),
+})
+
+export type ListItem = z.infer<typeof ListItemSchema>
+export type ListSubsection = z.infer<typeof ListSubsectionSchema>
+export type ListSection = z.infer<typeof ListSectionSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="id" type="string" required>
+    Unique identifier
+  </ParamField>
+  
+  <ParamField path="title" type="string" required>
+    Section title (e.g., "Certifications", "Publications")
+  </ParamField>
+  
+  <ParamField path="type" type="'list'" required>
+    Must be `'list'`
+  </ParamField>
+  
+  <ParamField path="structure" type="object" required>
+    List structure (flat or grouped)
+    
+    <Expandable title="Flat Structure">
+      <ParamField path="type" type="'flat'" required>
+        Must be `'flat'`
+      </ParamField>
+      
+      <ParamField path="items" type="ListItem[]" required>
+        Array of list items
+        
+        <Expandable title="ListItem">
+          <ParamField path="id" type="string" required>
+            Unique identifier
+          </ParamField>
+          
+          <ParamField path="date" type="string" required>
+            Date or date range
+          </ParamField>
+          
+          <ParamField path="position" type="string" required>
+            Position or role
+          </ParamField>
+          
+          <ParamField path="title" type="string" required>
+            Title or name
+          </ParamField>
+          
+          <ParamField path="location" type="string" required>
+            Location
+          </ParamField>
+        </Expandable>
+      </ParamField>
+    </Expandable>
+    
+    <Expandable title="Grouped Structure">
+      <ParamField path="type" type="'grouped'" required>
+        Must be `'grouped'`
+      </ParamField>
+      
+      <ParamField path="subsections" type="ListSubsection[]" required>
+        Array of subsections
+        
+        <Expandable title="ListSubsection">
+          <ParamField path="id" type="string" required>
+            Unique identifier
+          </ParamField>
+          
+          <ParamField path="title" type="string" required>
+            Subsection title
+          </ParamField>
+          
+          <ParamField path="items" type="ListItem[]" required>
+            Array of items in this subsection
+          </ParamField>
+        </Expandable>
+      </ParamField>
+    </Expandable>
+  </ParamField>
+</Expandable>
+
+**Use cases:**
+- Awards and honors
+- Certifications
+- Publications
+- Projects
+- Speaking engagements
+
+### TaxonomySectionSchema
+
+Categorized items section (skills, languages, etc.).
+
+```typescript packages/types/src/resume.ts
+export const CategoryItemSchema = BaseItemSchema.extend({
+  type: z.string(),
+  items: z.array(z.string()),
+})
+
+export const TaxonomySectionSchema = BaseSectionSchema.extend({
+  type: z.literal('taxonomy'),
+  categories: z.array(CategoryItemSchema),
+})
+
+export type CategoryItem = z.infer<typeof CategoryItemSchema>
+export type TaxonomySection = z.infer<typeof TaxonomySectionSchema>
+```
+
+<Expandable title="Fields">
+  <ParamField path="id" type="string" required>
+    Unique identifier
+  </ParamField>
+  
+  <ParamField path="title" type="string" required>
+    Section title (e.g., "Skills", "Languages")
+  </ParamField>
+  
+  <ParamField path="type" type="'taxonomy'" required>
+    Must be `'taxonomy'`
+  </ParamField>
+  
+  <ParamField path="categories" type="CategoryItem[]" required>
+    Array of categories
+    
+    <Expandable title="CategoryItem">
+      <ParamField path="id" type="string" required>
+        Unique identifier for this category
+      </ParamField>
+      
+      <ParamField path="type" type="string" required>
+        Category name (e.g., "Programming Languages", "Frameworks")
+      </ParamField>
+      
+      <ParamField path="items" type="string[]" required>
+        Array of items in this category
+      </ParamField>
+    </Expandable>
+  </ParamField>
+</Expandable>
+
+**Use cases:**
+- Technical skills
+- Languages
+- Tools and technologies
+- Interests and hobbies
+
+---
+
+## Type Guards
+
+Helper functions to narrow section types.
+
+```typescript packages/types/src/resume.ts
+export const isTextSection = (section: Section): section is TextSection =>
+  section.type === 'text'
+
+export const isTimelineSection = (
+  section: Section,
+): section is TimelineSection => section.type === 'timeline'
+
+export const isListSection = (section: Section): section is ListSection =>
+  section.type === 'list'
+
+export const isTaxonomySection = (
+  section: Section,
+): section is TaxonomySection => section.type === 'taxonomy'
+```
+
+**Usage:**
+
+```typescript
+import { isTimelineSection } from '@vitaes/types/resume'
+
+for (const section of resume.sections) {
+  if (isTimelineSection(section)) {
+    // TypeScript knows section is TimelineSection
+    section.entries.forEach(entry => {
+      console.log(entry.position, entry.title)
+    })
+  }
+}
+```
+
+---
+
+## Example Data
+
+Vitaes includes example resumes in multiple languages:
+
+```typescript packages/types/src/resume.ts
+export const exampleResumes = {
+  en: kendallRoyNew,
+  es: inigoMontoyaNew,
+  fr: arseneLupinNew,
+  de: kingSchultzNew,
+  ja: golDRogerNew,
+  pt: agostinhoCarraraResume,
+  zh: sunTzuNew,
+}
+```
+
+**Available languages:**
+- `en` - English
+- `es` - Spanish
+- `fr` - French
+- `de` - German
+- `ja` - Japanese
+- `pt` - Portuguese
+- `zh` - Chinese
+
+These example resumes are used when creating new resumes via the `createResume` endpoint.

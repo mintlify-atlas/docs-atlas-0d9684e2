@@ -1,0 +1,501 @@
+---
+title: Database
+description: PostgreSQL setup, Drizzle ORM usage, schema, and migrations
+---
+
+## Overview
+
+Vitaes uses **PostgreSQL 17** as the primary database and **Drizzle ORM** for type-safe database operations. The database layer is centralized in the `packages/db` package and shared across the application.
+
+## Database Configuration
+
+### Connection Setup
+
+The database client is configured in `packages/db/src/index.ts`:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as authSchema from './schema/auth';
+import * as appSchema from './schema/app';
+import type { NodePgClient } from 'drizzle-orm/node-postgres';
+
+export const db = drizzle(
+  process.env.DATABASE_URL || ('' as string | NodePgClient),
+  {
+    schema: {
+      ...authSchema,
+      ...appSchema,
+    },
+  },
+);
+```
+
+**Connection String Format:**
+
+```bash
+DATABASE_URL=postgresql://postgres:password@localhost:5432/vitaes
+```
+
+### Drizzle Kit Configuration
+
+The `drizzle.config.ts` file configures schema management:
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+import dotenv from 'dotenv';
+
+dotenv.config({
+  path: '../../apps/server/.env',
+});
+
+export default defineConfig({
+  schema: './src/schema',
+  out: './src/migrations',
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL || '',
+  },
+});
+```
+
+## Local PostgreSQL Setup
+
+### Using Docker Compose
+
+Vitaes includes a Docker Compose configuration for local development:
+
+```yaml
+# packages/db/docker-compose.yml
+name: vitaes
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: vitaes-postgres
+    environment:
+      POSTGRES_DB: vitaes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - vitaes_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  vitaes_postgres_data:
+```
+
+### Database Management Commands
+
+<CodeGroup>
+```bash Start database
+pnpm db:start
+# Starts PostgreSQL in detached mode
+```
+
+```bash Watch logs
+pnpm db:watch
+# Starts PostgreSQL with live logs
+```
+
+```bash Stop database
+pnpm db:stop
+# Stops the container without removing it
+```
+
+```bash Remove database
+pnpm db:down
+# Stops and removes the container and volumes
+```
+</CodeGroup>
+
+<Warning>
+Running `pnpm db:down` will delete all data. Use `pnpm db:stop` to preserve data between restarts.
+</Warning>
+
+## Database Schema
+
+### Authentication Schema
+
+The authentication tables are defined in `packages/db/src/schema/auth.ts`:
+
+```typescript
+import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+
+export const user = pgTable('user', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: boolean('email_verified').notNull(),
+  image: text('image'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+});
+
+export const session = pgTable('session', {
+  id: text('id').primaryKey(),
+  expiresAt: timestamp('expires_at').notNull(),
+  token: text('token').notNull().unique(),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+});
+
+export const account = pgTable('account', {
+  id: text('id').primaryKey(),
+  accountId: text('account_id').notNull(),
+  providerId: text('provider_id').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  idToken: text('id_token'),
+  accessTokenExpiresAt: timestamp('access_token_expires_at'),
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+  scope: text('scope'),
+  password: text('password'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+});
+
+export const verification = pgTable('verification', {
+  id: text('id').primaryKey(),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at'),
+  updatedAt: timestamp('updated_at'),
+});
+```
+
+**Key Features:**
+
+- **Cascade deletes**: Deleting a user removes all sessions and accounts
+- **Unique constraints**: Email and session tokens must be unique
+- **OAuth support**: Stores tokens for social authentication
+
+### Application Schema
+
+Application-specific tables are in `packages/db/src/schema/app.ts`:
+
+```typescript
+import {
+  boolean,
+  index,
+  integer,
+  json,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+} from 'drizzle-orm/pg-core';
+import type { IResume } from '@vitaes/types/resume';
+
+export const resume = pgTable(
+  'resume',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    userEmail: text('user_email').notNull(),
+    data: json('data').$type<IResume>(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    isPublic: boolean('is_public').notNull().default(false),
+    slug: text('slug').notNull().unique(),
+    views: integer('views').notNull().default(0),
+    downloads: integer('downloads').notNull().default(0),
+    thumbnailUrl: text('thumbnail_url'),
+  },
+  (table) => [
+    index('idx_resume_user_email').on(table.userEmail),
+    index('idx_resume_slug').on(table.slug),
+    unique('uk_resume_name_user_email').on(table.name, table.userEmail),
+  ],
+);
+```
+
+**Schema Features:**
+
+- **JSON column**: Stores resume data with TypeScript type
+- **Indexes**: Optimized queries on `userEmail` and `slug`
+- **Unique constraint**: Users can't have duplicate resume names
+- **Default values**: Auto-timestamps and default counters
+
+## Schema Management
+
+### Pushing Schema Changes
+
+For rapid development, push schema changes directly to the database:
+
+```bash
+pnpm db:push
+```
+
+This command:
+1. Reads schema files from `packages/db/src/schema/`
+2. Compares with current database state
+3. Applies changes without creating migration files
+
+<Warning>
+Use `db:push` for local development only. For production, use migrations.
+</Warning>
+
+### Generating Migrations
+
+Create migration files for production deployments:
+
+```bash
+pnpm db:generate
+```
+
+This generates SQL migration files in `packages/db/src/migrations/`:
+
+```
+src/migrations/
+├── 0000_initial_schema.sql
+├── 0001_add_resume_table.sql
+└── meta/
+    └── _journal.json
+```
+
+### Running Migrations
+
+Apply pending migrations to the database:
+
+```bash
+pnpm db:migrate
+```
+
+<Steps>
+  <Step title="Development workflow">
+    1. Modify schema in `packages/db/src/schema/`
+    2. Run `pnpm db:push` to test locally
+    3. Once stable, run `pnpm db:generate` to create migration
+    4. Commit migration files to version control
+  </Step>
+
+  <Step title="Production workflow">
+    1. Pull latest code with migration files
+    2. Run `pnpm db:migrate` to apply migrations
+    3. Verify schema changes with `pnpm db:studio`
+  </Step>
+</Steps>
+
+## Using Drizzle ORM
+
+### Query Examples
+
+**Select queries:**
+
+```typescript
+import { db } from '@vitaes/db';
+import { resume } from '@vitaes/db/schema/app';
+import { eq } from 'drizzle-orm';
+
+// Find all resumes for a user
+const userResumes = await db
+  .select()
+  .from(resume)
+  .where(eq(resume.userEmail, 'user@example.com'));
+
+// Find by slug
+const publicResume = await db
+  .select()
+  .from(resume)
+  .where(eq(resume.slug, 'my-resume'));
+```
+
+**Insert operations:**
+
+```typescript
+import { uuidv7 } from 'uuidv7';
+
+const newResume = await db
+  .insert(resume)
+  .values({
+    id: uuidv7(),
+    name: 'My Resume',
+    userEmail: 'user@example.com',
+    slug: 'my-resume',
+    data: { /* resume data */ },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  .returning();
+```
+
+**Update operations:**
+
+```typescript
+import { eq } from 'drizzle-orm';
+
+const updated = await db
+  .update(resume)
+  .set({
+    views: resume.views + 1,
+    updatedAt: new Date(),
+  })
+  .where(eq(resume.id, resumeId))
+  .returning();
+```
+
+**Delete operations:**
+
+```typescript
+await db
+  .delete(resume)
+  .where(eq(resume.id, resumeId));
+```
+
+### Type-Safe Relations
+
+Drizzle provides full type inference:
+
+```typescript
+import { db } from '@vitaes/db';
+import { user, session } from '@vitaes/db/schema/auth';
+import { eq } from 'drizzle-orm';
+
+// Join queries with type safety
+const userWithSessions = await db
+  .select()
+  .from(user)
+  .leftJoin(session, eq(user.id, session.userId))
+  .where(eq(user.id, userId));
+
+// Type: { user: User; session: Session | null }[]
+```
+
+## Database Studio
+
+Drizzle Studio provides a visual interface for database exploration:
+
+```bash
+pnpm db:studio
+```
+
+This opens a web UI at [https://local.drizzle.studio](https://local.drizzle.studio) where you can:
+
+- Browse all tables and data
+- Run queries visually
+- Edit records directly
+- View schema relationships
+
+## Environment Variables
+
+Required database environment variables:
+
+```bash
+# apps/server/.env
+DATABASE_URL=postgresql://postgres:password@localhost:5432/vitaes
+```
+
+**Production considerations:**
+
+- Use connection pooling for high traffic
+- Enable SSL: `?sslmode=require`
+- Set appropriate connection limits
+- Use read replicas for scaling
+
+## Best Practices
+
+<Steps>
+  <Step title="Use transactions for multi-step operations">
+    ```typescript
+    await db.transaction(async (tx) => {
+      await tx.insert(resume).values(newResume);
+      await tx.update(user).set({ updatedAt: new Date() });
+    });
+    ```
+  </Step>
+
+  <Step title="Index frequently queried columns">
+    Add indexes to columns used in WHERE clauses:
+    
+    ```typescript
+    (table) => [
+      index('idx_resume_user_email').on(table.userEmail),
+    ]
+    ```
+  </Step>
+
+  <Step title="Use prepared statements for repeated queries">
+    ```typescript
+    const getResumeById = db
+      .select()
+      .from(resume)
+      .where(eq(resume.id, placeholder('id')))
+      .prepare('get_resume_by_id');
+    
+    const result = await getResumeById.execute({ id: '123' });
+    ```
+  </Step>
+
+  <Step title="Validate data before database operations">
+    Use Zod schemas to validate input:
+    
+    ```typescript
+    import { z } from 'zod';
+    
+    const resumeSchema = z.object({
+      name: z.string().min(1).max(100),
+      slug: z.string().regex(/^[a-z0-9-]+$/),
+    });
+    
+    const validated = resumeSchema.parse(input);
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Connection Refused
+
+If you see "connection refused" errors:
+
+```bash
+# Verify PostgreSQL is running
+docker ps
+
+# Check logs
+pnpm db:watch
+
+# Restart database
+pnpm db:stop && pnpm db:start
+```
+
+### Schema Out of Sync
+
+If schema and database don't match:
+
+```bash
+# Reset and push fresh schema (development only)
+pnpm db:down
+pnpm db:start
+pnpm db:push
+```
+
+### Migration Conflicts
+
+If migrations fail:
+
+1. Check migration order in `_journal.json`
+2. Verify no manual schema changes were made
+3. Generate a new migration: `pnpm db:generate`
+
+## Next Steps
+
+- Review the [Architecture](/development/architecture) to understand how the database integrates
+- Learn about [Deployment](/development/deployment) for production database setup
+- Explore [Setup](/development/setup) for initial configuration

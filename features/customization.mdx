@@ -1,0 +1,315 @@
+---
+title: Customization
+description: Personalize your resume with theme colors, layouts, and formatting options
+---
+
+## Overview
+
+Vitaes provides extensive customization options to ensure your resume matches your personal brand and stands out. All customization settings are available in the **Theme** tab of the Resume Builder.
+
+## Theme Colors
+
+Choose from eight carefully selected theme colors that work across all templates:
+
+```typescript
+export const AwesomeColorSchema = z.enum([
+  'awesome-emerald',
+  'awesome-skyblue',
+  'awesome-red',
+  'awesome-pink',
+  'awesome-orange',
+  'awesome-nephritis',
+  'awesome-concrete',
+  'awesome-darknight',
+])
+
+export const colors = {
+  'awesome-emerald': '#00A388',
+  'awesome-skyblue': '#0395DE',
+  'awesome-red': '#DC3522',
+  'awesome-pink': '#EF4089',
+  'awesome-orange': '#FF6138',
+  'awesome-nephritis': '#27AE60',
+  'awesome-concrete': '#95A5A6',
+  'awesome-darknight': '#131A28',
+} as const
+```
+
+<CardGroup cols={2}>
+  <Card title="Emerald" color="#00A388">
+    Professional teal-green, great for tech and healthcare
+  </Card>
+  <Card title="Skyblue" color="#0395DE">
+    Trustworthy blue, perfect for corporate and finance
+  </Card>
+  <Card title="Red" color="#DC3522">
+    Bold and energetic, ideal for creative fields
+  </Card>
+  <Card title="Pink" color="#EF4089">
+    Modern and vibrant, stands out in design roles
+  </Card>
+</CardGroup>
+
+<Info>
+  Theme colors are applied to section headers, icons, dividers, and other accent elements throughout your resume.
+</Info>
+
+## Header Alignment
+
+Control how your personal information is displayed at the top of your resume:
+
+<Tabs>
+  <Tab title="Left">
+    Name and contact details aligned to the left - traditional and professional
+  </Tab>
+  <Tab title="Center">
+    Name and contact details centered - balanced and modern
+  </Tab>
+  <Tab title="Right">
+    Name and contact details aligned to the right - unique and eye-catching
+  </Tab>
+</Tabs>
+
+```typescript
+headerAlign: z.enum(['left', 'center', 'right'])
+```
+
+## Page Size
+
+Select the appropriate paper size for your region:
+
+- **A4**: Standard in most countries (210mm × 297mm)
+- **LETTER**: Standard in North America (8.5" × 11")
+
+```typescript
+pageSize: z.enum(['A4', 'LETTER'])
+```
+
+<Note>
+  Choose the page size that matches your target region's standard to ensure proper printing and formatting.
+</Note>
+
+## Section Color Highlighting
+
+Toggle whether section headers use your theme color:
+
+```typescript
+sectionColorHighlight: z.boolean()
+```
+
+- **Enabled**: Section titles appear in your chosen theme color
+- **Disabled**: Section titles use default text color for a more subtle look
+
+## Font Size
+
+Adjust the base font size to fit more or less content:
+
+```typescript
+fontSize: z.number().positive()
+```
+
+<Info>
+  The default font size is 9pt. Smaller sizes (8-9pt) fit more content but may be harder to read. Larger sizes (10-11pt) are more readable but take up more space.
+</Info>
+
+## Footer Configuration
+
+Customize the footer that appears at the bottom of each page. You can configure three footer positions independently:
+
+### Footer Options
+
+Each footer position (left, center, right) supports:
+
+```typescript
+export const FooterOptionSchema = z.object({
+  text: z.string(),
+  showPageNumber: z.boolean(),
+})
+```
+
+- **Custom Text**: Add any text (e.g., "Confidential", your name, a tagline)
+- **Page Number**: Display automatic page numbering
+
+<Note>
+  Page numbers and custom text are mutually exclusive. If you enable page numbering, the text field will be disabled.
+</Note>
+
+### Default Footer Configuration
+
+```typescript
+const defaultFooterOption: z.infer<typeof FooterOptionSchema> = {
+  text: '',
+  showPageNumber: false,
+}
+
+const defaultFooterRight: z.infer<typeof FooterOptionSchema> = {
+  text: '',
+  showPageNumber: true,
+}
+```
+
+By default, only the right footer shows page numbers.
+
+### Footer Examples
+
+<Accordion title="Professional Footer">
+  - **Left**: Empty
+  - **Center**: "Confidential - Not for Distribution"
+  - **Right**: Page numbers
+</Accordion>
+
+<Accordion title="Personal Branding Footer">
+  - **Left**: Your name
+  - **Center**: Empty
+  - **Right**: Page numbers
+</Accordion>
+
+<Accordion title="Minimal Footer">
+  - **Left**: Empty
+  - **Center**: Empty
+  - **Right**: Page numbers (default)
+</Accordion>
+
+## Theme Form Interface
+
+The Theme tab in the builder provides all customization controls:
+
+```typescript
+export const ThemeForm = withForm({
+  defaultValues: kendallRoyNew,
+  render: function Render({ form }) {
+    return (
+      <>
+        {/* Template Selection */}
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Template</h3>
+          <div className="grid grid-cols-2 gap-4">
+            {TemplateSchema.options.map((template) => (
+              <TemplateCard
+                name={template}
+                selected={field.state.value === template}
+                onClick={() => field.handleChange(template)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Theme Color */}
+        <form.AppField name="config.themeColor">
+          {(field) => (
+            <field.FormSelect
+              label="Theme Color"
+              options={Object.values(AwesomeColorSchema.enum).map((color) => ({
+                label: color.replace('awesome-', '').toUpperCase(),
+                value: color,
+              }))}
+            />
+          )}
+        </form.AppField>
+
+        {/* Header Alignment */}
+        <form.AppField name="config.headerAlign">
+          {(field) => (
+            <field.FormSelect
+              label="Header Alignment"
+              options={['left', 'center', 'right'].map((align) => ({
+                label: align.toUpperCase(),
+                value: align,
+              }))}
+            />
+          )}
+        </form.AppField>
+
+        {/* Page Size */}
+        <form.AppField name="config.pageSize">
+          {(field) => (
+            <field.FormSelect
+              label="Page Size"
+              options={[
+                { label: 'A4', value: 'A4' },
+                { label: 'LETTER', value: 'LETTER' },
+              ]}
+            />
+          )}
+        </form.AppField>
+
+        {/* Footer Configuration */}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Footer Left</h3>
+            <form.AppField name="config.footerLeft.text">
+              {(field) => (
+                <field.FormInput
+                  label="Footer Text"
+                  placeholder="Enter footer text"
+                  disabled={pageNumberLeft}
+                />
+              )}
+            </form.AppField>
+            <form.AppField name="config.footerLeft.showPageNumber">
+              {(field) => (
+                <field.FormCheckbox label="Show Page Number" />
+              )}
+            </form.AppField>
+          </div>
+        </div>
+      </>
+    )
+  },
+})
+```
+
+## Live Preview
+
+All customization changes are reflected immediately in the live PDF preview:
+
+1. Make a change in the Theme tab
+2. The form validates your input
+3. After 500ms, changes are auto-saved
+4. The PDF preview updates in real-time
+5. A thumbnail is generated and uploaded
+
+<Info>
+  You can experiment with different combinations without worry - all changes are automatically saved and you can see exactly how they look before sharing your resume.
+</Info>
+
+## Resume Configuration Schema
+
+The complete configuration schema:
+
+```typescript
+export const ResumeConfigSchema = z.object({
+  template: TemplateSchema,
+  themeColor: AwesomeColorSchema,
+  headerAlign: z.enum(['left', 'center', 'right']),
+  sectionColorHighlight: z.boolean(),
+  fontSize: z.number().positive(),
+  pageSize: z.enum(['A4', 'LETTER']),
+  footerLeft: FooterOptionSchema,
+  footerCenter: FooterOptionSchema,
+  footerRight: FooterOptionSchema,
+})
+```
+
+All customization options are validated using Zod to ensure type safety and data integrity.
+
+## Best Practices
+
+<Accordion title="Choose colors that match your industry">
+  - **Tech**: Emerald, Skyblue, or Nephritis
+  - **Creative**: Pink, Orange, or Red
+  - **Corporate**: Skyblue, Concrete, or Darknight
+  - **Healthcare**: Emerald or Nephritis
+</Accordion>
+
+<Accordion title="Keep it readable">
+  Don't go below 8pt font size, and ensure there's enough contrast between your theme color and the background.
+</Accordion>
+
+<Accordion title="Be consistent">
+  Use the same template and color scheme across all versions of your resume for brand consistency.
+</Accordion>
+
+<Accordion title="Test printing">
+  Download and print your resume to ensure the colors look good on paper, not just on screen.
+</Accordion>

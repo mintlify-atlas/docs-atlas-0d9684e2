@@ -1,0 +1,205 @@
+---
+title: Development Setup
+description: Set up your local development environment for Vitaes
+---
+
+## Prerequisites
+
+Before starting, ensure you have the following installed:
+
+- **Node.js** 24 or later
+- **pnpm** 10.18.3 or later (package manager)
+- **Docker** and Docker Compose (for local PostgreSQL)
+- **PostgreSQL** 17 (can be run via Docker)
+
+<Note>
+Vitaes uses pnpm as the package manager. The project is configured with `packageManager: "pnpm@10.18.3"` in package.json.
+</Note>
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Vitaes repository to your local machine:
+    
+    ```bash
+    git clone <repository-url>
+    cd vitaes
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all dependencies using pnpm:
+    
+    ```bash
+    pnpm install
+    ```
+    
+    This will install dependencies for all packages in the monorepo, including:
+    - Web application (React + TanStack Router)
+    - Server application (Hono + oRPC)
+    - Shared packages (auth, api, db)
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create environment files for both the server and web applications.
+    
+    **Server environment** (`apps/server/.env`):
+    
+    ```bash
+    DATABASE_URL=postgresql://postgres:password@localhost:5432/vitaes
+    BETTER_AUTH_SECRET=your-secret-key-here
+    BETTER_AUTH_URL=http://localhost:3000
+    CORS_ORIGIN=http://localhost:3001
+    
+    # OAuth Providers (optional)
+    GOOGLE_CLIENT_ID=
+    GOOGLE_CLIENT_SECRET=
+    GITHUB_CLIENT_ID=
+    GITHUB_CLIENT_SECRET=
+    
+    # MinIO/S3 Storage (optional)
+    MINIO_ENDPOINT=
+    MINIO_PUBLIC_ENDPOINT=
+    MINIO_ACCESS_KEY=
+    MINIO_SECRET_KEY=
+    MINIO_BUCKET=
+    ```
+    
+    **Web environment** (`apps/web/.env`):
+    
+    ```bash
+    VITE_SERVER_URL=http://localhost:3000
+    VITE_APP_URL=http://localhost:3001
+    VITE_OPENPANEL_CLIENT_ID=
+    VITE_OPENPANEL_API_URL=
+    ```
+    
+    <Warning>
+    Never commit `.env` files to version control. Use `.env.example` files as templates.
+    </Warning>
+  </Step>
+
+  <Step title="Start PostgreSQL database">
+    Use Docker Compose to start a local PostgreSQL instance:
+    
+    ```bash
+    pnpm db:start
+    ```
+    
+    This runs the Docker Compose configuration from `packages/db/docker-compose.yml`:
+    
+    ```yaml
+    services:
+      postgres:
+        image: postgres:17
+        container_name: vitaes-postgres
+        environment:
+          POSTGRES_DB: vitaes
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - "5432:5432"
+    ```
+    
+    <Note>
+    The database will be available at `postgresql://postgres:password@localhost:5432/vitaes`
+    </Note>
+  </Step>
+
+  <Step title="Push database schema">
+    Apply the database schema using Drizzle:
+    
+    ```bash
+    pnpm db:push
+    ```
+    
+    This creates all necessary tables including:
+    - Authentication tables (user, session, account, verification)
+    - Application tables (resume)
+  </Step>
+
+  <Step title="Start development servers">
+    Start all development servers:
+    
+    ```bash
+    pnpm dev
+    ```
+    
+    This starts both the web and server applications in parallel using Turborepo.
+    
+    Alternatively, start them individually:
+    
+    <CodeGroup>
+    ```bash Server only
+    pnpm dev:server
+    ```
+    
+    ```bash Web only
+    pnpm dev:web
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Verify Installation
+
+After completing the setup:
+
+1. **Web Application**: Open [http://localhost:3001](http://localhost:3001)
+2. **API Server**: Available at [http://localhost:3000](http://localhost:3000)
+3. **Database Studio**: Run `pnpm db:studio` to open Drizzle Studio
+
+## Available Development Scripts
+
+The following scripts are available in the root `package.json`:
+
+| Script | Description |
+|--------|-------------|
+| `pnpm dev` | Start all applications in development mode |
+| `pnpm build` | Build all applications for production |
+| `pnpm check-types` | Check TypeScript types across all packages |
+| `pnpm dev:web` | Start only the web application |
+| `pnpm dev:server` | Start only the server application |
+| `pnpm db:push` | Push schema changes to database |
+| `pnpm db:studio` | Open Drizzle Studio (database UI) |
+| `pnpm db:generate` | Generate database migrations |
+| `pnpm db:migrate` | Run database migrations |
+| `pnpm db:start` | Start PostgreSQL with Docker Compose |
+| `pnpm db:stop` | Stop PostgreSQL container |
+| `pnpm db:down` | Stop and remove PostgreSQL container |
+
+## Troubleshooting
+
+### Database Connection Issues
+
+If you encounter database connection errors:
+
+1. Verify PostgreSQL is running: `docker ps`
+2. Check the `DATABASE_URL` in `apps/server/.env`
+3. Ensure the database exists: `pnpm db:start`
+
+### Port Already in Use
+
+If ports 3000 or 3001 are already in use:
+
+1. Stop the conflicting process
+2. Or modify the ports in:
+   - `apps/web/package.json` (web port in dev script)
+   - `apps/server/src/index.ts` (server port configuration)
+
+### Type Errors
+
+Run type checking across all packages:
+
+```bash
+pnpm check-types
+```
+
+## Next Steps
+
+Now that your development environment is set up:
+
+- Learn about the [Architecture](/development/architecture) of the monorepo
+- Understand the [Database](/development/database) schema and ORM usage
+- Review [Deployment](/development/deployment) options for production

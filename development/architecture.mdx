@@ -1,0 +1,367 @@
+---
+title: Architecture
+description: Understanding Vitaes monorepo structure and technology stack
+---
+
+## Overview
+
+Vitaes is built as a modern TypeScript monorepo using Turborepo for efficient builds and development. The architecture follows a clear separation between frontend, backend, and shared packages.
+
+## Technology Stack
+
+### Frontend
+
+- **React 19** - UI library
+- **TanStack Router** - Type-safe file-based routing
+- **TailwindCSS 4** - Utility-first styling
+- **shadcn/ui** - Reusable component library
+- **TanStack Query** - Server state management
+- **Vite** - Build tool and dev server
+
+### Backend
+
+- **Hono** - Fast, lightweight web framework
+- **oRPC** - End-to-end type-safe RPC with OpenAPI
+- **Better Auth** - Authentication library
+- **Node.js** - Runtime environment
+
+### Database & ORM
+
+- **PostgreSQL 17** - Primary database
+- **Drizzle ORM** - TypeScript-first ORM
+- **Drizzle Kit** - Schema management and migrations
+
+### Build System
+
+- **Turborepo** - Monorepo build orchestration
+- **pnpm** - Fast, disk-efficient package manager
+- **TypeScript** - Type safety across the stack
+- **tsdown** - TypeScript bundler for packages
+
+## Monorepo Structure
+
+```
+vitaes/
+├── apps/
+│   ├── web/         # Frontend React application
+│   └── server/      # Backend API server
+├── packages/
+│   ├── api/         # API routes and business logic
+│   ├── auth/        # Authentication configuration
+│   ├── db/          # Database schema and client
+│   ├── types/       # Shared TypeScript types
+│   ├── eslint-config/      # Shared ESLint config
+│   ├── typescript-config/  # Shared TypeScript config
+│   └── vitest-config/      # Shared Vitest config
+├── package.json     # Root package.json with workspace scripts
+└── turbo.json       # Turborepo configuration
+```
+
+## Applications
+
+### Web Application (`apps/web`)
+
+The frontend application built with React and TanStack Router.
+
+**Key Dependencies:**
+
+```json
+{
+  "dependencies": {
+    "react": "^19.2.0",
+    "@tanstack/react-router": "^1.133.20",
+    "@tanstack/react-query": "^5.85.5",
+    "@orpc/client": "catalog:",
+    "@vitaes/api": "workspace:*",
+    "@vitaes/auth": "workspace:*",
+    "tailwindcss": "^4.1.15"
+  }
+}
+```
+
+**Development Server:**
+
+- Runs on port 3001 by default
+- Hot module replacement enabled
+- Connects to backend API at port 3000
+
+**Build Output:**
+
+```json
+// turbo.json
+{
+  "build": {
+    "outputs": ["dist/**"]
+  }
+}
+```
+
+### Server Application (`apps/server`)
+
+The backend API server built with Hono and oRPC.
+
+**Key Dependencies:**
+
+```json
+{
+  "dependencies": {
+    "hono": "catalog:",
+    "@orpc/server": "catalog:",
+    "@orpc/openapi": "catalog:",
+    "better-auth": "catalog:",
+    "@vitaes/api": "workspace:*",
+    "@vitaes/auth": "workspace:*",
+    "@vitaes/db": "workspace:*"
+  }
+}
+```
+
+**Development:**
+
+- Runs on port 3000 by default
+- Uses `tsx watch` for hot reloading
+- Serves oRPC API endpoints
+
+**Production Build:**
+
+```bash
+# Build to dist/index.js
+pnpm build
+
+# Or compile to standalone binary
+pnpm compile
+```
+
+## Shared Packages
+
+### API Package (`packages/api`)
+
+Contains the oRPC router definitions and business logic.
+
+**Structure:**
+
+```typescript
+// packages/api/src/index.ts
+import { ORPCError, os } from "@orpc/server";
+import type { Context } from "./context";
+
+export const o = os.$context<Context>();
+
+export const publicProcedure = o;
+
+const requireAuth = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  return next({
+    context: {
+      session: context.session,
+    },
+  });
+});
+
+export const protectedProcedure = publicProcedure.use(requireAuth);
+```
+
+**Features:**
+
+- Type-safe RPC procedures
+- Authentication middleware
+- OpenAPI integration
+- S3/MinIO file storage utilities
+
+### Auth Package (`packages/auth`)
+
+Centralized authentication configuration using Better Auth.
+
+```typescript
+// packages/auth/src/index.ts
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { lastLoginMethod } from 'better-auth/plugins';
+
+import { db } from '@vitaes/db';
+import * as schema from '@vitaes/db/schema/auth';
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    provider: 'pg',
+    schema: schema,
+  }),
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    },
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID || '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
+    },
+  },
+  plugins: [lastLoginMethod()],
+});
+```
+
+**Supported Features:**
+
+- Email/password authentication
+- Google OAuth
+- GitHub OAuth
+- Session management
+- CSRF protection
+
+### Database Package (`packages/db`)
+
+Database schema, client configuration, and migrations.
+
+```typescript
+// packages/db/src/index.ts
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as authSchema from './schema/auth';
+import * as appSchema from './schema/app';
+
+export const db = drizzle(
+  process.env.DATABASE_URL || '',
+  {
+    schema: {
+      ...authSchema,
+      ...appSchema,
+    },
+  },
+);
+```
+
+See [Database Documentation](/development/database) for detailed schema information.
+
+### Types Package (`packages/types`)
+
+Shared TypeScript type definitions used across the application.
+
+## Build Configuration
+
+### Turborepo Configuration
+
+The `turbo.json` file defines the build pipeline:
+
+```json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**"],
+      "env": ["CORS_ORIGIN"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
+```
+
+**Key Features:**
+
+- **Dependency-based builds**: `^build` ensures dependencies build first
+- **Smart caching**: Turbo caches build outputs for faster rebuilds
+- **Parallel execution**: Runs independent tasks in parallel
+- **Environment awareness**: Tracks `.env` files for cache invalidation
+
+### Workspace Dependencies
+
+Packages reference each other using workspace protocol:
+
+```json
+{
+  "dependencies": {
+    "@vitaes/api": "workspace:*",
+    "@vitaes/auth": "workspace:*",
+    "@vitaes/db": "workspace:*"
+  }
+}
+```
+
+This ensures:
+- Always uses the local version
+- Proper type inference across packages
+- Fast local development with hot reloading
+
+## Development Workflow
+
+### Running the Stack
+
+```bash
+# Start all services
+pnpm dev
+
+# Turbo runs in parallel:
+# - apps/web dev server
+# - apps/server dev server
+# - All package builds in watch mode
+```
+
+### Type Safety
+
+The monorepo enforces strict TypeScript across all packages:
+
+```bash
+# Check types in all packages
+pnpm check-types
+
+# Turbo runs tsc in each package that defines check-types
+```
+
+### Adding New Packages
+
+<Steps>
+  <Step title="Create package directory">
+    ```bash
+    mkdir -p packages/my-package/src
+    cd packages/my-package
+    ```
+  </Step>
+
+  <Step title="Create package.json">
+    ```json
+    {
+      "name": "@vitaes/my-package",
+      "type": "module",
+      "exports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "default": "./src/index.ts"
+        }
+      },
+      "scripts": {
+        "build": "tsdown"
+      },
+      "devDependencies": {
+        "@vitaes/typescript-config": "workspace:*",
+        "tsdown": "catalog:"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Add to workspace">
+    The package is automatically detected by pnpm workspaces.
+  </Step>
+
+  <Step title="Use in other packages">
+    ```json
+    {
+      "dependencies": {
+        "@vitaes/my-package": "workspace:*"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+- Explore the [Database Schema](/development/database)
+- Learn about [Deployment](/development/deployment) options
+- Review [Setup Instructions](/development/setup) for local development

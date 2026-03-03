@@ -1,0 +1,323 @@
+---
+title: Sharing
+description: Share your resume publicly with a unique URL and track views and downloads
+---
+
+## Overview
+
+Vitaes allows you to share your resume publicly via a unique URL. When you make a resume public, anyone with the link can view and download it, and you can track engagement through view and download analytics.
+
+## Making a Resume Public
+
+You can toggle your resume's public status from the dashboard:
+
+1. Navigate to your dashboard
+2. Find the resume card you want to share
+3. Click the three-dot menu (⋮)
+4. Select **Make Public**
+
+<Info>
+  Each resume has a unique slug that's generated from your email and resume name. This slug becomes part of the public URL.
+</Info>
+
+### Programmatic Public Status Update
+
+```typescript
+export const appRouter = {
+  updateResumePublicStatus: protectedProcedure
+    .input(z.object({ id: z.string(), isPublic: z.boolean() }))
+    .handler(async ({ context, input }) => {
+      const { id: resumeId, isPublic } = input
+      const currentUser = context.session.user
+      
+      const queriedResume = await db.query.resume.findFirst({
+        where: ({ id, userEmail }, { eq, and }) =>
+          and(eq(id, resumeId), eq(userEmail, currentUser.email)),
+      })
+      
+      if (!queriedResume) {
+        throw new ORPCError('NOT_FOUND')
+      }
+      
+      await db
+        .update(resume)
+        .set({ isPublic, updatedAt: new Date() })
+        .where(eq(resume.id, resumeId))
+      
+      return updatedResume
+    }),
+}
+```
+
+## Public Resume URLs
+
+Once a resume is public, it's accessible at:
+
+```
+https://yourdomain.com/view/{slug}
+```
+
+The slug is generated using:
+
+```typescript
+slug: uniqueSlug(currentUser.email, name)
+```
+
+## Share Dialog
+
+When you click "Share" on a public resume, a dialog appears with the shareable URL:
+
+```typescript
+export function ShareDialog({
+  open,
+  slug,
+  onOpenChange,
+}: ShareDialogProps) {
+  const [copied, setCopied] = useState(false)
+  const shareUrl = `${globalThis.location.origin}/view/${slug}`
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      toast.success('Link copied to clipboard!')
+      setTimeout(() => {
+        setCopied(false)
+      }, 2000)
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = shareUrl
+      textArea.style.position = 'fixed'
+      textArea.style.opacity = '0'
+      document.body.appendChild(textArea)
+      textArea.select()
+      await navigator.clipboard.writeText(shareUrl)
+      textArea.remove()
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Share Resume</DialogTitle>
+          <DialogDescription>
+            Anyone with this link can view your resume
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4">
+          <div className="flex gap-2">
+            <Input
+              readOnly
+              value={shareUrl}
+              className="flex-1 font-mono text-sm"
+              onClick={(e) => e.currentTarget.select()}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCopy}
+            >
+              {copied ? <Check /> : <Copy />}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+```
+
+<Note>
+  The share dialog includes a one-click copy button that automatically copies the URL to your clipboard with visual feedback.
+</Note>
+
+## View Tracking
+
+Public resumes automatically track page views:
+
+```typescript
+getResumeBySlug: publicProcedure
+  .input(z.object({ slug: z.string() }))
+  .handler(async ({ context, input }) => {
+    const { slug: resumeSlug } = input
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ slug }, { eq }) => eq(slug, resumeSlug),
+    })
+    
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    
+    // Check permissions
+    if (
+      !queriedResume.isPublic &&
+      queriedResume.userEmail !== context.session?.user.email
+    ) {
+      throw new ORPCError('FORBIDDEN')
+    }
+    
+    // Only increment views for public resumes
+    if (queriedResume.isPublic) {
+      await db
+        .update(resume)
+        .set({ views: queriedResume.views + 1 })
+        .where(eq(resume.id, queriedResume.id))
+    }
+    
+    return queriedResume
+  })
+```
+
+<Info>
+  Views are only tracked for public resumes. Private resumes accessed by their owner don't increment the view counter.
+</Info>
+
+## Download Tracking
+
+Public resumes also track downloads:
+
+```typescript
+setDownloadCount: publicProcedure
+  .input(z.object({ id: z.string() }))
+  .handler(async ({ context, input }) => {
+    const { id: resumeId } = input
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ id }, { eq }) => eq(id, resumeId),
+    })
+    
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    
+    // Check permissions
+    if (
+      !queriedResume.isPublic &&
+      queriedResume.userEmail !== context.session?.user.email
+    ) {
+      throw new ORPCError('FORBIDDEN')
+    }
+    
+    // Only increment downloads for public resumes
+    if (queriedResume.isPublic) {
+      await db
+        .update(resume)
+        .set({ downloads: queriedResume.downloads + 1 })
+        .where(eq(resume.id, resumeId))
+    }
+    
+    return queriedResume
+  })
+```
+
+## Analytics on Resume Cards
+
+Public and private resumes display different information on their cards:
+
+```typescript
+<CardFooter className="flex items-center justify-between border-t p-4">
+  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+    {resume.isPublic ? (
+      <>
+        <div className="flex items-center gap-1">
+          <Globe className="size-3" />
+          <span>{resume.views} views</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Download className="size-3" />
+          <span>{resume.downloads}</span>
+        </div>
+      </>
+    ) : (
+      <div className="flex items-center gap-1">
+        <Lock className="size-3" />
+        <span>Private</span>
+      </div>
+    )}
+  </div>
+</CardFooter>
+```
+
+<Tabs>
+  <Tab title="Public Resume Card">
+    Shows:
+    - Globe icon with view count
+    - Download icon with download count
+    - Share button in the menu
+  </Tab>
+  <Tab title="Private Resume Card">
+    Shows:
+    - Lock icon with "Private" label
+    - No view or download counts
+    - "Make Public" option in menu
+  </Tab>
+</Tabs>
+
+## Making a Resume Private
+
+To make a public resume private again:
+
+1. Open the resume card menu (⋮)
+2. Select **Make Private**
+3. The resume will no longer be accessible via its public URL
+4. View and download counts are preserved but stop incrementing
+
+<Note>
+  Making a resume private doesn't delete the slug or reset analytics. If you make it public again later, the same URL will work and analytics will continue from where they left off.
+</Note>
+
+## Security and Privacy
+
+### Access Control
+
+- **Public resumes**: Accessible to anyone with the link
+- **Private resumes**: Only accessible by the owner when logged in
+- **URL validation**: Invalid slugs return a 404 error
+- **Permission checks**: Private resume access attempts by non-owners return a 403 error
+
+### Slug Generation
+
+Slugs are generated to be unique and URL-safe:
+
+```typescript
+slug: uniqueSlug(currentUser.email, name)
+```
+
+The `uniqueSlug` function ensures:
+- No collisions between different users
+- URL-safe characters only
+- Stable slug generation (same name = same slug for same user)
+
+## Best Practices
+
+<Accordion title="Share selectively">
+  Only make resumes public when you're actively sharing them. Keep work-in-progress resumes private.
+</Accordion>
+
+<Accordion title="Monitor analytics">
+  Check your view and download counts to see how much engagement your shared resume is getting.
+</Accordion>
+
+<Accordion title="Update before sharing">
+  Ensure your resume is complete and up-to-date before making it public and sharing the link.
+</Accordion>
+
+<Accordion title="Use for applications">
+  Include your public resume URL in job applications, LinkedIn profiles, or email signatures for easy access.
+</Accordion>
+
+<Accordion title="Revoke access when needed">
+  Make your resume private when you're no longer actively job searching to control who can access it.
+</Accordion>
+
+## Public Resume Viewer
+
+When someone visits your public resume URL, they see a dedicated viewer page:
+
+- Full PDF preview of your resume
+- Download button to save the PDF
+- No editing capabilities
+- Clean, distraction-free interface
+
+The viewer automatically increments view counts and tracks downloads, giving you valuable insights into how your resume is being engaged with.

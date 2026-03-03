@@ -1,0 +1,604 @@
+---
+title: Deployment
+description: Build process, environment configuration, and deployment options for Vitaes
+---
+
+## Overview
+
+Vitaes is designed for flexible deployment with support for containerized environments, traditional VPS hosting, and modern platforms like Vercel, Railway, or Render.
+
+## Build Process
+
+### Production Build
+
+Build all applications for production:
+
+```bash
+pnpm build
+```
+
+This runs the Turborepo build pipeline:
+
+1. Builds all packages in dependency order
+2. Compiles TypeScript to JavaScript
+3. Bundles frontend assets with Vite
+4. Outputs to `dist/` directories
+
+**Build configuration** from `turbo.json`:
+
+```json
+{
+  "build": {
+    "dependsOn": ["^build"],
+    "inputs": ["$TURBO_DEFAULT$", ".env*"],
+    "outputs": ["dist/**"],
+    "env": ["CORS_ORIGIN"]
+  }
+}
+```
+
+### Building Individual Applications
+
+<CodeGroup>
+```bash Server only
+pnpm turbo build --filter=server
+```
+
+```bash Web only
+pnpm turbo build --filter=web
+```
+
+```bash With dependencies
+pnpm turbo build --filter=server...
+# Builds server and all its dependencies
+```
+</CodeGroup>
+
+## Environment Variables
+
+### Server Environment
+
+Required environment variables for `apps/server`:
+
+```bash
+# Database
+DATABASE_URL=postgresql://user:password@host:5432/database
+
+# Authentication
+BETTER_AUTH_SECRET=your-secret-key-minimum-32-characters
+BETTER_AUTH_URL=https://api.yourdomain.com
+CORS_ORIGIN=https://yourdomain.com
+
+# OAuth Providers (optional)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
+
+# Storage (optional)
+MINIO_ENDPOINT=minio.yourdomain.com
+MINIO_PUBLIC_ENDPOINT=https://cdn.yourdomain.com
+MINIO_ACCESS_KEY=your-access-key
+MINIO_SECRET_KEY=your-secret-key
+MINIO_BUCKET=vitaes-uploads
+```
+
+<Warning>
+Never commit `.env` files to version control. Use your deployment platform's secrets management.
+</Warning>
+
+### Web Environment
+
+Required build-time environment variables for `apps/web`:
+
+```bash
+VITE_SERVER_URL=https://api.yourdomain.com
+VITE_APP_URL=https://yourdomain.com
+VITE_OPENPANEL_CLIENT_ID=your-openpanel-id
+VITE_OPENPANEL_API_URL=https://api.openpanel.dev
+```
+
+<Note>
+Vite environment variables must be prefixed with `VITE_` and are embedded at build time.
+</Note>
+
+### Generating Secrets
+
+Generate secure secrets for production:
+
+```bash
+# BETTER_AUTH_SECRET (32+ characters)
+openssl rand -base64 32
+
+# Or using Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+## Docker Deployment
+
+### Server Dockerfile
+
+The server includes a production-ready Dockerfile at `apps/server/Dockerfile`:
+
+```dockerfile
+# Base Image
+FROM node:24-alpine AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+
+FROM base AS builder
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+RUN pnpm install turbo --global
+COPY . .
+
+# Generate a partial monorepo with a pruned lockfile
+RUN turbo prune server --docker
+
+FROM base AS installer
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY --from=builder /app/out/json/ .
+RUN pnpm install --frozen-lockfile
+
+COPY --from=builder /app/out/full/ .
+RUN pnpm turbo run build --filter=server...
+
+FROM base AS runner
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 hono
+
+COPY --from=installer --chown=hono:nodejs /app /app
+WORKDIR /app/apps/server
+
+USER hono
+ENV NODE_ENV=production
+EXPOSE 3000
+
+CMD ["node", "dist/index.mjs"]
+```
+
+**Build and run:**
+
+```bash
+# Build image
+docker build -f apps/server/Dockerfile -t vitaes-server .
+
+# Run container
+docker run -p 3000:3000 \
+  -e DATABASE_URL="postgresql://..." \
+  -e BETTER_AUTH_SECRET="..." \
+  vitaes-server
+```
+
+### Web Dockerfile
+
+The web application Dockerfile at `apps/web/Dockerfile`:
+
+```dockerfile
+# Base Image
+FROM node:24-alpine AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+
+FROM base AS builder
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+RUN pnpm install turbo --global
+COPY . .
+
+RUN turbo prune web --docker
+
+FROM base AS installer
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY --from=builder /app/out/json/ .
+RUN pnpm install --frozen-lockfile
+
+COPY --from=builder /app/out/full/ .
+
+ARG VITE_SERVER_URL
+ARG VITE_APP_URL
+ARG VITE_OPENPANEL_CLIENT_ID
+ARG VITE_OPENPANEL_API_URL
+
+ENV VITE_SERVER_URL=$VITE_SERVER_URL
+ENV VITE_APP_URL=$VITE_APP_URL
+ENV VITE_OPENPANEL_CLIENT_ID=$VITE_OPENPANEL_CLIENT_ID
+ENV VITE_OPENPANEL_API_URL=$VITE_OPENPANEL_API_URL
+
+RUN pnpm turbo run build --filter=web...
+
+FROM base AS runner
+RUN pnpm install --global serve
+
+COPY --from=installer /app /app
+WORKDIR /app/apps/web
+
+ENV NODE_ENV=production
+EXPOSE 4173
+
+CMD ["serve", "-s", "dist", "-l", "4173"]
+```
+
+**Build with environment variables:**
+
+```bash
+docker build -f apps/web/Dockerfile \
+  --build-arg VITE_SERVER_URL=https://api.yourdomain.com \
+  --build-arg VITE_APP_URL=https://yourdomain.com \
+  -t vitaes-web .
+
+docker run -p 4173:4173 vitaes-web
+```
+
+### Docker Compose
+
+For local production testing, create `docker-compose.prod.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: vitaes
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/vitaes
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+    depends_on:
+      - postgres
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_SERVER_URL: ${VITE_SERVER_URL}
+        VITE_APP_URL: ${VITE_APP_URL}
+    ports:
+      - "4173:4173"
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
+```
+
+## Platform-Specific Deployments
+
+### Railway
+
+<Steps>
+  <Step title="Connect repository">
+    1. Create new project in Railway
+    2. Connect your GitHub repository
+    3. Railway auto-detects the monorepo
+  </Step>
+
+  <Step title="Configure services">
+    Create two services:
+    
+    **Server Service:**
+    - Root Directory: `apps/server`
+    - Build Command: `pnpm turbo build --filter=server...`
+    - Start Command: `node dist/index.mjs`
+    
+    **Web Service:**
+    - Root Directory: `apps/web`
+    - Build Command: `pnpm turbo build --filter=web...`
+    - Start Command: `npx serve -s dist -l 4173`
+  </Step>
+
+  <Step title="Add PostgreSQL">
+    1. Add PostgreSQL plugin
+    2. Railway automatically sets `DATABASE_URL`
+    3. Run migrations: `pnpm db:migrate`
+  </Step>
+
+  <Step title="Set environment variables">
+    Add all required environment variables in Railway dashboard.
+  </Step>
+</Steps>
+
+### Render
+
+<Steps>
+  <Step title="Create web service">
+    - Build Command: `pnpm install && pnpm turbo build --filter=web...`
+    - Start Command: `npx serve -s apps/web/dist -l 4173`
+  </Step>
+
+  <Step title="Create backend service">
+    - Build Command: `pnpm install && pnpm turbo build --filter=server...`
+    - Start Command: `node apps/server/dist/index.mjs`
+  </Step>
+
+  <Step title="Add PostgreSQL">
+    Create a PostgreSQL database and connect using `DATABASE_URL`.
+  </Step>
+</Steps>
+
+### Vercel (Web Only)
+
+Deploy the frontend to Vercel:
+
+```json
+// vercel.json
+{
+  "buildCommand": "pnpm turbo build --filter=web...",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "pnpm install",
+  "framework": "vite"
+}
+```
+
+<Note>
+Deploy the server separately on a Node.js platform like Railway or Render.
+</Note>
+
+### VPS (Manual Deployment)
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    # On server
+    curl -fsSL https://get.pnpm.io/install.sh | sh -
+    pnpm install
+    ```
+  </Step>
+
+  <Step title="Build applications">
+    ```bash
+    pnpm build
+    ```
+  </Step>
+
+  <Step title="Set up process manager">
+    Use PM2 to manage Node.js processes:
+    
+    ```bash
+    pnpm add -g pm2
+    
+    # Start server
+    cd apps/server
+    pm2 start dist/index.mjs --name vitaes-server
+    
+    # Start web
+    cd apps/web
+    pm2 serve dist 4173 --name vitaes-web
+    
+    # Save and enable startup
+    pm2 save
+    pm2 startup
+    ```
+  </Step>
+
+  <Step title="Configure reverse proxy">
+    Use Nginx to proxy requests:
+    
+    ```nginx
+    server {
+      listen 80;
+      server_name api.yourdomain.com;
+      
+      location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+      }
+    }
+    
+    server {
+      listen 80;
+      server_name yourdomain.com;
+      
+      location / {
+        proxy_pass http://localhost:4173;
+        proxy_set_header Host $host;
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Database Migrations in Production
+
+### Pre-Deployment Migrations
+
+Run migrations before deploying new code:
+
+```bash
+# On deployment server or CI/CD
+pnpm db:migrate
+```
+
+### Automated Migrations
+
+Add to your deployment pipeline:
+
+```yaml
+# .github/workflows/deploy.yml
+- name: Run migrations
+  run: pnpm db:migrate
+  env:
+    DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+- name: Deploy application
+  run: pnpm build && deploy
+```
+
+<Warning>
+Always test migrations on a staging database first. Backup production before running migrations.
+</Warning>
+
+## Health Checks
+
+Implement health check endpoints for monitoring:
+
+```typescript
+// apps/server/src/index.ts
+app.get('/health', (c) => {
+  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/health/db', async (c) => {
+  try {
+    await db.execute('SELECT 1');
+    return c.json({ status: 'ok', database: 'connected' });
+  } catch (error) {
+    return c.json({ status: 'error', database: 'disconnected' }, 500);
+  }
+});
+```
+
+## Performance Optimization
+
+### Build Optimizations
+
+1. **Enable production mode:**
+   ```bash
+   NODE_ENV=production pnpm build
+   ```
+
+2. **Use build caching:**
+   Turborepo automatically caches builds:
+   ```bash
+   turbo build --cache-dir=.turbo
+   ```
+
+3. **Minimize bundle size:**
+   Vite automatically tree-shakes and minifies in production.
+
+### Runtime Optimizations
+
+1. **Database connection pooling:**
+   ```typescript
+   import { Pool } from 'pg';
+   
+   const pool = new Pool({
+     connectionString: process.env.DATABASE_URL,
+     max: 20, // Maximum connections
+     idleTimeoutMillis: 30000,
+   });
+   ```
+
+2. **Enable compression:**
+   ```typescript
+   import { compress } from 'hono/compress';
+   
+   app.use(compress());
+   ```
+
+3. **Cache static assets:**
+   Set proper cache headers in Nginx or CDN.
+
+## Monitoring & Logging
+
+### Application Logs
+
+Structure logs for production:
+
+```typescript
+const logger = {
+  info: (msg: string, meta?: object) => 
+    console.log(JSON.stringify({ level: 'info', msg, ...meta })),
+  error: (msg: string, error?: Error) => 
+    console.error(JSON.stringify({ level: 'error', msg, error: error?.message })),
+};
+
+logger.info('Server started', { port: 3000 });
+```
+
+### Error Tracking
+
+Integrate error tracking services like Sentry:
+
+```bash
+pnpm add @sentry/node
+```
+
+```typescript
+import * as Sentry from '@sentry/node';
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+});
+```
+
+## Security Checklist
+
+<Steps>
+  <Step title="Environment variables">
+    - Never commit secrets to version control
+    - Use platform secrets management
+    - Rotate secrets regularly
+  </Step>
+
+  <Step title="HTTPS/SSL">
+    - Enable HTTPS in production
+    - Use Let's Encrypt for free certificates
+    - Configure CORS properly
+  </Step>
+
+  <Step title="Database">
+    - Use SSL for database connections
+    - Restrict database access by IP
+    - Regular backups
+  </Step>
+
+  <Step title="Dependencies">
+    - Run `pnpm audit` regularly
+    - Keep dependencies updated
+    - Use Dependabot or Renovate
+  </Step>
+</Steps>
+
+## Rollback Strategy
+
+1. **Tag releases:**
+   ```bash
+   git tag -a v1.0.0 -m "Release 1.0.0"
+   git push origin v1.0.0
+   ```
+
+2. **Database backups:**
+   Take automated backups before each deployment.
+
+3. **Quick rollback:**
+   ```bash
+   # Revert to previous version
+   git checkout v1.0.0
+   pnpm install
+   pnpm build
+   pm2 restart all
+   ```
+
+## Next Steps
+
+- Review [Setup](/development/setup) for local development
+- Understand [Architecture](/development/architecture) for system design
+- Learn [Database](/development/database) management for migrations

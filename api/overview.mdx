@@ -1,0 +1,221 @@
+---
+title: 'API Overview'
+description: 'Introduction to the Vitae oRPC-based API'
+---
+
+## Introduction
+
+Vitae uses [oRPC](https://orpc.unnoq.com/) (Open RPC) as its API framework, providing a type-safe, modern approach to building and consuming APIs. oRPC combines the developer experience of tRPC with OpenAPI compatibility, giving you end-to-end type safety with TypeScript while maintaining REST-like accessibility.
+
+## Base URL
+
+The API is served from your Vitae server instance:
+
+```
+http://localhost:3000/rpc
+```
+
+In production, replace `localhost:3000` with your deployed server URL.
+
+<Note>
+The `/rpc` prefix is used for all oRPC procedure calls. There's also an `/api-reference` endpoint for OpenAPI documentation.
+</Note>
+
+## Type Safety with TypeScript
+
+One of the key benefits of oRPC is full end-to-end type safety. The client automatically infers types from your server router definition.
+
+### Setting Up the Client
+
+Here's how the Vitae web app creates a type-safe client:
+
+```typescript
+import { RPCLink } from '@orpc/client/fetch'
+import type { AppRouterClient } from '@vitaes/api/routers/index'
+import { createORPCClient } from '@orpc/client'
+import { createTanstackQueryUtils } from '@orpc/tanstack-query'
+
+export const link = new RPCLink({
+  url: `${import.meta.env.VITE_SERVER_URL}/rpc`,
+  fetch(url, options) {
+    return fetch(url, {
+      ...options,
+      credentials: 'include',
+    })
+  },
+})
+
+export const client: AppRouterClient = createORPCClient(link)
+```
+
+<Info>
+The `credentials: 'include'` option is crucial for sending authentication cookies with each request.
+</Info>
+
+### TanStack Query Integration
+
+Vitae integrates oRPC with TanStack Query for powerful data fetching and caching:
+
+```typescript
+export const orpc = createTanstackQueryUtils(client)
+
+// Use in your components
+const { data: resumes } = orpc.listResumes.useQuery()
+```
+
+## Response Format
+
+### Success Response
+
+Successful API calls return the data directly:
+
+```json
+{
+  "id": "01J9EXAMPLE123",
+  "name": "My Resume",
+  "userEmail": "user@example.com",
+  "data": {
+    "personalInfo": { ... },
+    "config": { ... }
+  }
+}
+```
+
+### Array Responses
+
+List operations return arrays:
+
+```json
+[
+  {
+    "id": "01J9EXAMPLE123",
+    "name": "Resume 1",
+    "updatedAt": "2026-03-01T10:30:00Z"
+  },
+  {
+    "id": "01J9EXAMPLE456",
+    "name": "Resume 2",
+    "updatedAt": "2026-03-02T14:20:00Z"
+  }
+]
+```
+
+## Error Handling
+
+Vitae uses oRPC's built-in error handling with standardized error codes.
+
+### Error Codes
+
+<ResponseField name="UNAUTHORIZED" type="string">
+Thrown when authentication is required but not provided. HTTP status: 401
+</ResponseField>
+
+<ResponseField name="FORBIDDEN" type="string">
+Thrown when the user doesn't have permission to access the resource. HTTP status: 403
+</ResponseField>
+
+<ResponseField name="NOT_FOUND" type="string">
+Thrown when the requested resource doesn't exist. HTTP status: 404
+</ResponseField>
+
+<ResponseField name="INTERNAL_SERVER_ERROR" type="string">
+Thrown when an unexpected server error occurs. HTTP status: 500
+</ResponseField>
+
+### Error Response Example
+
+```json
+{
+  "code": "NOT_FOUND",
+  "message": "Resource not found",
+  "status": 404
+}
+```
+
+### Handling Errors in Client Code
+
+Here's how the Vitae web app handles errors globally:
+
+```typescript
+import { QueryCache, QueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+
+export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => {
+      toast.error(`Error: ${error.message}`, {
+        action: {
+          label: 'retry',
+          onClick: () => {
+            queryClient.invalidateQueries()
+          },
+        },
+      })
+    },
+  }),
+})
+```
+
+## Rate Limiting
+
+<Info>
+Currently, Vitae does not implement rate limiting. For production deployments, consider adding rate limiting middleware using packages like `@hono/rate-limiter` or implementing it at the reverse proxy level.
+</Info>
+
+## Quick Example
+
+Here's a complete example of making an API call to list all resumes:
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { AppRouterClient } from '@vitaes/api/routers/index'
+
+// Create the client
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+  fetch(url, options) {
+    return fetch(url, {
+      ...options,
+      credentials: 'include',
+    })
+  },
+})
+
+const client: AppRouterClient = createORPCClient(link)
+
+// Make authenticated request
+try {
+  const resumes = await client.listResumes()
+  console.log('My resumes:', resumes)
+} catch (error) {
+  if (error.code === 'UNAUTHORIZED') {
+    console.error('Please log in first')
+  } else {
+    console.error('Error fetching resumes:', error)
+  }
+}
+```
+
+## Available Endpoints
+
+Vitae exposes the following procedure categories:
+
+- **Health & Status**: Health check endpoints
+- **Resume Management**: Create, read, update, and delete resumes
+- **Resume Sharing**: Manage public/private status and get public resumes
+- **Analytics**: Track views and downloads
+- **Assets**: Upload resume thumbnails
+
+For detailed endpoint documentation, see the specific API reference pages.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Learn how authentication works with Better-Auth
+  </Card>
+  <Card title="Endpoints" icon="code" href="/api/endpoints">
+    Explore all available API endpoints
+  </Card>
+</CardGroup>

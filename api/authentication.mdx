@@ -1,0 +1,420 @@
+---
+title: 'Authentication'
+description: 'How authentication works in Vitae using Better-Auth'
+---
+
+## Overview
+
+Vitae uses [Better-Auth](https://better-auth.com/) for authentication, providing a secure, flexible authentication system with support for multiple social providers and session management.
+
+## Authentication System
+
+### Better-Auth Configuration
+
+The authentication system is configured in the `@vitaes/auth` package:
+
+```typescript
+import { betterAuth } from 'better-auth'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { lastLoginMethod } from 'better-auth/plugins'
+
+import { db } from '@vitaes/db'
+import * as schema from '@vitaes/db/schema/auth'
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    provider: 'pg',
+    schema: schema,
+  }),
+  trustedOrigins: [process.env.CORS_ORIGIN || ''],
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    },
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID || '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
+    },
+  },
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: 'none',
+      secure: true,
+      httpOnly: true,
+    },
+  },
+  plugins: [lastLoginMethod()],
+})
+```
+
+<Info>
+The auth instance is a singleton that's shared across the application.
+</Info>
+
+### Supported Providers
+
+Vitae supports the following authentication providers:
+
+<ParamField body="Google" type="OAuth Provider">
+Sign in with Google using OAuth 2.0
+</ParamField>
+
+<ParamField body="GitHub" type="OAuth Provider">
+Sign in with GitHub using OAuth 2.0
+</ParamField>
+
+## Session Management
+
+### How Sessions Work
+
+When a user authenticates, Better-Auth creates a session and stores it in the database. The session is identified by a cookie sent with each request.
+
+### Session Context
+
+The API creates a context for each request that includes the user's session:
+
+```typescript
+import type { Context as HonoContext } from 'hono'
+import { auth } from '@vitaes/auth'
+
+export async function createContext({ context }: { context: HonoContext }) {
+  const session = await auth.api.getSession({
+    headers: context.req.raw.headers,
+  })
+  return {
+    session,
+  }
+}
+```
+
+This context is automatically passed to all API procedures, making the session available throughout your application.
+
+### Session Object Structure
+
+When authenticated, the session object contains:
+
+```typescript
+{
+  session: {
+    user: {
+      id: string
+      email: string
+      name: string
+      image?: string
+      emailVerified: boolean
+      createdAt: Date
+      updatedAt: Date
+    }
+    // ... other session metadata
+  }
+}
+```
+
+## Protected vs Public Procedures
+
+Vitae defines two types of API procedures:
+
+### Public Procedures
+
+Public procedures can be called without authentication:
+
+```typescript
+import { os } from "@orpc/server"
+import type { Context } from "./context"
+
+export const o = os.$context<Context>()
+export const publicProcedure = o
+```
+
+Examples of public procedures:
+- `healthCheck`: Server health status
+- `helloWorld`: Test endpoint
+- `getResumeBySlug`: View public resumes (with access control)
+- `setDownloadCount`: Track downloads on public resumes
+
+### Protected Procedures
+
+Protected procedures require authentication. They use middleware to verify the session:
+
+```typescript
+import { ORPCError } from "@orpc/server"
+
+const requireAuth = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED")
+  }
+  return next({
+    context: {
+      session: context.session,
+    },
+  })
+})
+
+export const protectedProcedure = publicProcedure.use(requireAuth)
+```
+
+Examples of protected procedures:
+- `listResumes`: Get all user's resumes
+- `createResume`: Create a new resume
+- `updateResume`: Update resume content
+- `deleteResume`: Delete a resume
+- `uploadThumbnail`: Upload resume thumbnail
+
+<Warning>
+Attempting to call a protected procedure without authentication will result in an `UNAUTHORIZED` error.
+</Warning>
+
+## Authentication Headers & Cookies
+
+### Cookie-Based Authentication
+
+Vitae uses HTTP-only cookies for session management. This is more secure than token-based authentication as the cookies cannot be accessed by JavaScript.
+
+#### Cookie Attributes
+
+<ResponseField name="httpOnly" type="boolean">
+Set to `true` - prevents JavaScript access to the cookie
+</ResponseField>
+
+<ResponseField name="secure" type="boolean">
+Set to `true` - cookie only sent over HTTPS
+</ResponseField>
+
+<ResponseField name="sameSite" type="string">
+Set to `'none'` - allows cross-origin requests with credentials
+</ResponseField>
+
+### CORS Configuration
+
+For cookie-based authentication to work across origins, the server is configured with CORS:
+
+```typescript
+app.use(
+  '/*',
+  cors({
+    origin: process.env.CORS_ORIGIN || '',
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  }),
+)
+```
+
+### Client Configuration
+
+When making API requests, you must include credentials:
+
+```typescript
+const link = new RPCLink({
+  url: `${import.meta.env.VITE_SERVER_URL}/rpc`,
+  fetch(url, options) {
+    return fetch(url, {
+      ...options,
+      credentials: 'include', // Important!
+    })
+  },
+})
+```
+
+<Note>
+The `credentials: 'include'` option ensures cookies are sent with every request.
+</Note>
+
+## Authentication Flow
+
+Here's the complete authentication flow in Vitae:
+
+### 1. User Initiates Login
+
+User clicks "Sign in with Google" or "Sign in with GitHub" in the web app.
+
+### 2. OAuth Redirect
+
+The user is redirected to the provider's OAuth consent screen:
+
+```
+GET /api/auth/signin/google
+GET /api/auth/signin/github
+```
+
+### 3. OAuth Callback
+
+After the user approves, the provider redirects back with an authorization code:
+
+```
+GET /api/auth/callback/google?code=...
+```
+
+### 4. Session Creation
+
+Better-Auth:
+1. Exchanges the code for user information
+2. Creates or updates the user in the database
+3. Creates a new session
+4. Sets an HTTP-only session cookie
+
+### 5. Authenticated Requests
+
+All subsequent API calls include the session cookie automatically:
+
+```typescript
+// The cookie is automatically included
+const resumes = await client.listResumes()
+```
+
+### 6. Session Validation
+
+For each protected procedure call:
+
+1. The `createContext` function extracts the session from cookies
+2. The `requireAuth` middleware checks if a valid session exists
+3. If valid, the request proceeds with user context
+4. If invalid, an `UNAUTHORIZED` error is thrown
+
+## Example: Making Authenticated Requests
+
+### Setup
+
+```typescript
+import { createORPCClient } from '@orpc/client'
+import { RPCLink } from '@orpc/client/fetch'
+import type { AppRouterClient } from '@vitaes/api/routers/index'
+
+const link = new RPCLink({
+  url: 'http://localhost:3000/rpc',
+  fetch(url, options) {
+    return fetch(url, {
+      ...options,
+      credentials: 'include',
+    })
+  },
+})
+
+const client: AppRouterClient = createORPCClient(link)
+```
+
+### Create a Resume (Protected)
+
+```typescript
+try {
+  const newResume = await client.createResume({
+    name: 'Software Engineer Resume',
+    language: 'en',
+    template: 'modern',
+  })
+  
+  console.log('Created resume:', newResume.id)
+} catch (error) {
+  if (error.code === 'UNAUTHORIZED') {
+    console.error('Please sign in to create a resume')
+    // Redirect to login
+  } else {
+    console.error('Failed to create resume:', error.message)
+  }
+}
+```
+
+### Access Control Example
+
+Some procedures implement additional access control beyond authentication:
+
+```typescript
+// From packages/api/src/routers/index.ts
+getResumeBySlug: publicProcedure
+  .input(z.object({ slug: z.string() }))
+  .handler(async ({ context, input }) => {
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ slug }, { eq }) => eq(slug, input.slug),
+    })
+    
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    
+    // Access control: private resumes only accessible by owner
+    if (
+      !queriedResume.isPublic &&
+      queriedResume.userEmail !== context.session?.user.email
+    ) {
+      throw new ORPCError('FORBIDDEN')
+    }
+    
+    return queriedResume
+  })
+```
+
+<Warning>
+Even though `getResumeBySlug` is a public procedure, it enforces access control: private resumes can only be viewed by their owners.
+</Warning>
+
+## Security Best Practices
+
+### Environment Variables
+
+Always store sensitive credentials in environment variables:
+
+```bash
+# .env
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
+CORS_ORIGIN=https://your-frontend-domain.com
+```
+
+### HTTPS in Production
+
+<Warning>
+Always use HTTPS in production. The `secure: true` cookie attribute requires HTTPS to function properly.
+</Warning>
+
+### Trusted Origins
+
+Configure trusted origins to prevent CSRF attacks:
+
+```typescript
+trustedOrigins: [process.env.CORS_ORIGIN || '']
+```
+
+## Troubleshooting
+
+### "UNAUTHORIZED" Error
+
+**Cause**: No valid session found
+
+**Solutions**:
+- Verify the user is logged in
+- Check that `credentials: 'include'` is set in fetch options
+- Ensure cookies are not blocked by browser settings
+- Verify CORS origin is correctly configured
+
+### Cookies Not Being Sent
+
+**Cause**: CORS misconfiguration
+
+**Solutions**:
+- Set `credentials: true` in CORS config
+- Set `credentials: 'include'` in fetch options
+- Ensure `sameSite: 'none'` for cross-origin requests
+- Use HTTPS in production for `secure: true` cookies
+
+### Session Not Persisting
+
+**Cause**: Cookie not being saved
+
+**Solutions**:
+- Check browser developer tools for cookie creation
+- Verify domain matches between client and server
+- Ensure `httpOnly` cookies are supported in your environment
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Overview" icon="book" href="/api/overview">
+    Learn about the oRPC-based API architecture
+  </Card>
+  <Card title="Endpoints" icon="code" href="/api/endpoints">
+    Explore all available API endpoints
+  </Card>
+</CardGroup>

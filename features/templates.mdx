@@ -1,0 +1,225 @@
+---
+title: Templates
+description: Choose from multiple professionally designed resume templates
+---
+
+## Available Templates
+
+Vitaes offers four professionally designed resume templates, each with a unique visual style:
+
+<CardGroup cols={2}>
+  <Card title="Awesome" icon="star">
+    A modern, colorful template with strong visual hierarchy and accent colors
+  </Card>
+  <Card title="Modern" icon="layout">
+    Clean and contemporary design with balanced spacing
+  </Card>
+  <Card title="Professional" icon="briefcase">
+    Traditional business-focused layout for corporate environments
+  </Card>
+  <Card title="Bold" icon="bolt">
+    Eye-catching design with strong typography and visual elements
+  </Card>
+</CardGroup>
+
+## Template Selection
+
+You can choose a template in two places:
+
+### 1. When Creating a Resume
+
+When creating a new resume, you'll see a template selection dialog:
+
+```typescript
+export function CreateResumeDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+}: CreateResumeDialogProps) {
+  const form = useAppForm({
+    defaultValues: {
+      name: '',
+      template: 'awesome' as Template,
+    },
+    // ...
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Choose a Template</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {TemplateSchema.options.map((template) => (
+              <TemplateCard
+                name={template}
+                selected={field.state.value === template}
+                onClick={() => field.handleChange(template)}
+              />
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+```
+
+<Info>
+  The default template is "Awesome". When you create a resume, it's pre-populated with example data in your chosen language and the selected template.
+</Info>
+
+### 2. In the Theme Tab
+
+You can switch templates at any time while editing:
+
+1. Open your resume in the builder
+2. Navigate to the **Theme** tab (⌘/Ctrl+3)
+3. Click on a different template in the Template section
+
+The live preview will immediately update to show your resume in the new template.
+
+## Template Schema
+
+Templates are defined using a Zod enum schema:
+
+```typescript
+export const TemplateSchema = z.enum([
+  'awesome',
+  'modern',
+  'professional',
+  'bold',
+])
+
+export type Template = z.infer<typeof TemplateSchema>
+```
+
+This ensures type safety throughout the application and makes it easy to add new templates in the future.
+
+## Template Components
+
+Each template is implemented as a React component that renders the PDF structure:
+
+```
+components/templates/
+├── awesome/
+│   ├── index.tsx
+│   ├── header.tsx
+│   ├── footer.tsx
+│   ├── entry.tsx
+│   ├── items.tsx
+│   ├── fonts/
+│   └── icons/
+├── bold/
+├── modern/
+└── professional/
+```
+
+Each template receives the resume data and renders it according to its unique design:
+
+```typescript
+import { ResumePDF } from '@/components/resume'
+
+<ResumePDF value={resumeData} />
+```
+
+## Template Configuration
+
+When you select a template, it's stored in the resume config:
+
+```typescript
+export const ResumeConfigSchema = z.object({
+  template: TemplateSchema,
+  themeColor: AwesomeColorSchema,
+  headerAlign: z.enum(['left', 'center', 'right']),
+  sectionColorHighlight: z.boolean(),
+  fontSize: z.number().positive(),
+  pageSize: z.enum(['A4', 'LETTER']),
+  footerLeft: FooterOptionSchema,
+  footerCenter: FooterOptionSchema,
+  footerRight: FooterOptionSchema,
+})
+```
+
+<Note>
+  Template selection is independent of other customization options. You can freely switch between templates without losing your color, layout, or formatting choices.
+</Note>
+
+## Template Previews
+
+Template selection displays preview thumbnails stored as static images:
+
+```typescript
+export const TemplateCard = ({
+  name,
+  selected,
+  onClick,
+}: TemplateCardProps) => {
+  return (
+    <div
+      role="button"
+      className={cn(
+        'relative cursor-pointer rounded-lg border-2',
+        selected ? 'border-primary' : 'border-transparent'
+      )}
+      onClick={onClick}
+    >
+      <img
+        src={`/${name}.png`}
+        alt={name}
+        className="w-full h-full object-cover"
+      />
+      {selected && (
+        <div className="absolute top-2 right-2 bg-primary text-primary-foreground rounded-full p-1">
+          <Check className="size-3" />
+        </div>
+      )}
+      <div className="p-2 text-center text-sm font-medium capitalize">
+        {name}
+      </div>
+    </div>
+  )
+}
+```
+
+The preview images help you visualize how your resume will look before switching templates.
+
+## Switching Templates
+
+When you change templates:
+
+1. Your content remains unchanged
+2. The new template's layout is applied immediately
+3. Theme colors and other customizations are preserved
+4. The PDF preview updates in real-time
+5. Changes are auto-saved after 500ms
+
+<Info>
+  All templates support the same section types and customization options, ensuring your content displays correctly regardless of which template you choose.
+</Info>
+
+## Template-Specific Features
+
+While all templates support the same data structure, each template may render certain elements differently:
+
+- **Color usage**: Some templates use accent colors more prominently
+- **Section styling**: Headers and dividers vary by template
+- **Icon styles**: Social profile icons and bullet points differ
+- **Typography**: Font choices and sizes are template-specific
+- **Spacing**: Padding and margins are optimized per template
+
+## Best Practices
+
+<Accordion title="Choose the right template for your industry">
+  - **Tech/Creative**: Awesome or Bold for modern, colorful designs
+  - **Corporate/Finance**: Professional for traditional, conservative look
+  - **General/Versatile**: Modern works well across most industries
+</Accordion>
+
+<Accordion title="Preview before finalizing">
+  Use the live PDF preview to see exactly how your resume looks in each template before making your final choice.
+</Accordion>
+
+<Accordion title="Consider your content volume">
+  Some templates are more space-efficient than others. If you have extensive content, test different templates to see which one fits best.
+</Accordion>

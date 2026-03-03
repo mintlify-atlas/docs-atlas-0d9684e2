@@ -1,0 +1,238 @@
+---
+title: Resume Builder
+description: Create and edit professional resumes with Vitaes' powerful visual builder interface
+---
+
+## Overview
+
+The Resume Builder is the core feature of Vitaes, providing a comprehensive visual interface for creating and editing professional resumes. The builder features a split-screen design with a live PDF preview that updates in real-time as you make changes.
+
+## Builder Interface
+
+When you open a resume in the builder (`/builder/:id`), you'll see a two-panel interface:
+
+- **Left Panel**: Tabbed editor with three sections (Personal Info, Sections, Theme)
+- **Right Panel**: Live PDF preview that updates automatically as you edit
+
+### Navigation Tabs
+
+The builder organizes editing into three main tabs, accessible via keyboard shortcuts:
+
+<Tabs>
+  <Tab title="Personal Info (⌘/Ctrl+1)">
+    Edit your basic information including:
+    - First and Last Name
+    - Position/Job Title
+    - Address
+    - Quote/Tagline
+    - Social Profiles (email, phone, LinkedIn, GitHub, etc.)
+  </Tab>
+  <Tab title="Sections (⌘/Ctrl+2)">
+    Add and manage resume sections. Supports multiple section types:
+    - **Text**: Simple text content (e.g., Summary, Objective)
+    - **Timeline**: Chronological entries with position, title, location, date, and description (e.g., Work Experience, Education)
+    - **List**: Flat or grouped list items (e.g., Projects, Publications)
+    - **Taxonomy**: Categorized items (e.g., Skills by category, Languages)
+  </Tab>
+  <Tab title="Theme (⌘/Ctrl+3)">
+    Customize the visual appearance:
+    - Template selection
+    - Theme color
+    - Header alignment
+    - Page size (A4/Letter)
+    - Footer configuration
+  </Tab>
+</Tabs>
+
+## Auto-Save
+
+Vitaes automatically saves your changes as you work:
+
+```typescript
+listeners: {
+  onChangeDebounceMs: 500,
+  onChange: (values) => {
+    if (values.formApi.state.isValid) {
+      setResume(values.formApi.state.values)
+      setIsSaving(true)
+      updateResume
+        .mutateAsync({
+          id,
+          data: values.formApi.state.values,
+        })
+        .then(async (savedResume) => {
+          setLastSaved(savedResume.updatedAt)
+          // Generate and upload thumbnail after successful save
+          const thumbnail = await generateThumbnail(values.formApi.state.values)
+          await uploadThumbnail.mutateAsync({
+            resumeId: id,
+            thumbnail: thumbnail.data,
+          })
+        })
+    }
+  },
+}
+```
+
+<Info>
+  Changes are debounced by 500ms and only saved when the form is valid. The builder also automatically generates and uploads a thumbnail after each save.
+</Info>
+
+## Section Types
+
+The builder supports flexible content organization through different section types:
+
+### Text Section
+
+Simple text content for summaries or objectives:
+
+```typescript
+{
+  id: 'summary',
+  title: 'Summary',
+  type: 'text',
+  content: 'Experienced executive with a strong background in corporate management...'
+}
+```
+
+### Timeline Section
+
+Perfect for work experience, education, and certificates:
+
+```typescript
+{
+  id: 'experience',
+  title: 'Work Experience',
+  type: 'timeline',
+  entries: [
+    {
+      id: 'waystar-ceo',
+      position: 'Co-CEO',
+      title: 'Waystar Royco',
+      location: 'New York, NY',
+      date: '2018-01-01 — present',
+      items: [
+        'Led company through significant growth',
+        'Implemented strategic initiatives'
+      ]
+    }
+  ]
+}
+```
+
+### List Section
+
+Supports both flat and grouped structures:
+
+```typescript
+// Grouped list example
+{
+  id: 'honors',
+  title: 'Honors',
+  type: 'list',
+  structure: {
+    type: 'grouped',
+    subsections: [
+      {
+        id: 'awards',
+        title: 'Awards',
+        items: [
+          {
+            id: 'innovation-award',
+            date: '2017',
+            position: '1st Place',
+            title: 'Business Innovation Award',
+            location: 'New York, NY'
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Taxonomy Section
+
+Organize items by category:
+
+```typescript
+{
+  id: 'languages',
+  title: 'Languages',
+  type: 'taxonomy',
+  categories: [
+    {
+      id: 'spanish',
+      type: 'Español',
+      items: ['Nativo']
+    },
+    {
+      id: 'english',
+      type: 'Inglés',
+      items: ['Avanzado']
+    }
+  ]
+}
+```
+
+## Drag and Drop
+
+Sections can be reordered using drag and drop functionality:
+
+<Note>
+  The builder uses `@dnd-kit` for accessible drag-and-drop section reordering. Simply grab a section and drag it to a new position to reorganize your resume.
+</Note>
+
+## Social Profiles
+
+The builder supports multiple social platforms:
+
+```typescript
+export const SocialPlatformSchema = z.enum([
+  'mobile',
+  'email',
+  'homepage',
+  'github',
+  'gitlab',
+  'linkedin',
+  'twitter',
+  'stackoverflow',
+  'skype',
+  'reddit',
+  'xing',
+  'medium',
+  'googlescholar',
+])
+```
+
+Each social profile includes:
+- Platform type
+- Value (username, email, phone number)
+- Optional display text
+- Optional custom URL
+
+## Live Preview
+
+The right panel displays a real-time PDF preview of your resume using `@react-pdf/renderer`. As you type and make changes, the preview updates automatically to show exactly how your resume will look when downloaded or shared.
+
+## Download Resume
+
+Click the Download button in the header to save your resume as a PDF file. The filename will be based on your resume name (e.g., `My Resume.pdf`).
+
+<Info>
+  Downloads are tracked for analytics purposes. Public resumes also track how many times they've been downloaded by viewers.
+</Info>
+
+## Resume Structure
+
+Each resume is structured as follows:
+
+```typescript
+export type IResume = {
+  config: ResumeConfig        // Template, colors, formatting
+  personalInfo: PersonalInfo  // Name, position, socials
+  sections: Section[]         // Content sections
+}
+```
+
+This structure is validated using Zod schemas to ensure data integrity throughout the editing process.

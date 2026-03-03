@@ -1,0 +1,845 @@
+---
+title: Resume Endpoints
+description: Complete API reference for managing resumes in Vitaes
+---
+
+The Resume API provides endpoints for creating, reading, updating, and deleting resumes. All endpoints use the ORPC protocol and return typed responses.
+
+## Authentication
+
+Most endpoints require authentication using the `protectedProcedure` middleware. Public endpoints are explicitly marked below.
+
+## Error Handling
+
+All endpoints may throw `ORPCError` with the following codes:
+- `NOT_FOUND` - Resource not found
+- `FORBIDDEN` - Access denied
+- `INTERNAL_SERVER_ERROR` - Server error
+
+---
+
+## listResumes
+
+Retrieves all resumes belonging to the authenticated user, ordered by most recently updated.
+
+**Authentication:** Required (protected)
+
+### Response
+
+<ResponseField name="resumes" type="array">
+  Array of resume objects
+  
+  <Expandable title="Resume Object">
+    <ResponseField name="id" type="string">
+      Unique resume identifier (UUIDv7)
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Resume name
+    </ResponseField>
+    
+    <ResponseField name="userEmail" type="string">
+      Owner's email address
+    </ResponseField>
+    
+    <ResponseField name="data" type="IResume | null">
+      Resume data conforming to ResumeSchema. See [Types](/api/types) for full schema.
+    </ResponseField>
+    
+    <ResponseField name="slug" type="string">
+      Unique URL-friendly slug
+    </ResponseField>
+    
+    <ResponseField name="isPublic" type="boolean">
+      Whether the resume is publicly accessible
+    </ResponseField>
+    
+    <ResponseField name="thumbnailUrl" type="string | null">
+      URL to resume thumbnail image
+    </ResponseField>
+    
+    <ResponseField name="views" type="number">
+      Number of times the resume has been viewed (public only)
+    </ResponseField>
+    
+    <ResponseField name="downloads" type="number">
+      Number of times the resume has been downloaded (public only)
+    </ResponseField>
+    
+    <ResponseField name="createdAt" type="timestamp">
+      Creation timestamp
+    </ResponseField>
+    
+    <ResponseField name="updatedAt" type="timestamp">
+      Last update timestamp
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```typescript
+const resumes = await client.listResumes()
+// Returns array of resumes ordered by updatedAt (descending)
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+listResumes: protectedProcedure.handler(async ({ context }) => {
+  const currentUser = context.session.user
+  const resumes = await db.query.resume.findMany({
+    where: ({ userEmail }, { eq }) => eq(userEmail, currentUser.email),
+    orderBy: ({ updatedAt }, { desc }) => desc(updatedAt),
+  })
+  return resumes.map((resume) => ({
+    ...resume,
+    data: resume.data ? ResumeSchema.parse(resume.data) : null,
+  }))
+})
+```
+
+---
+
+## getResumeById
+
+Retrieves a specific resume by ID. Only returns resumes owned by the authenticated user.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="id" type="string" required>
+  The resume ID to retrieve
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  Resume object with all fields (see listResumes for structure)
+</ResponseField>
+
+### Errors
+
+- `NOT_FOUND` - Resume does not exist or does not belong to user
+
+### Example
+
+```typescript
+const resume = await client.getResumeById({ 
+  id: '01H2XMPL3K7N8Q9R' 
+})
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+getResumeById: protectedProcedure
+  .input(z.object({ id: z.string() }))
+  .handler(async ({ context, input }) => {
+    const { id: resumeId } = input
+    const currentUser = context.session.user
+    const resume = await db.query.resume.findFirst({
+      where: ({ id, userEmail }, { eq, and }) =>
+        and(eq(id, resumeId), eq(userEmail, currentUser.email)),
+    })
+    if (!resume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    return {
+      ...resume,
+      data: resume.data ? ResumeSchema.parse(resume.data) : null,
+    }
+  })
+```
+
+---
+
+## getResumeBySlug
+
+Retrieves a resume by its unique slug. This endpoint is public but enforces privacy rules.
+
+**Authentication:** Optional (public)
+
+### Input
+
+<ParamField path="slug" type="string" required>
+  The resume slug to retrieve
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  Resume object with all fields. The `views` counter is automatically incremented for public resumes.
+</ResponseField>
+
+### Behavior
+
+- Public resumes: Accessible to anyone, view count incremented
+- Private resumes: Only accessible to the owner
+- Throws `FORBIDDEN` if trying to access someone else's private resume
+
+### Errors
+
+- `NOT_FOUND` - Resume with slug does not exist
+- `FORBIDDEN` - Resume is private and user is not the owner
+
+### Example
+
+```typescript
+const resume = await client.getResumeBySlug({ 
+  slug: 'john-doe-software-engineer' 
+})
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+getResumeBySlug: publicProcedure
+  .input(z.object({ slug: z.string() }))
+  .handler(async ({ context, input }) => {
+    const { slug: resumeSlug } = input
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ slug }, { eq }) => eq(slug, resumeSlug),
+    })
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    if (
+      !queriedResume.isPublic &&
+      queriedResume.userEmail !== context.session?.user.email
+    ) {
+      throw new ORPCError('FORBIDDEN')
+    }
+    // Only increment views for public resumes
+    if (queriedResume.isPublic) {
+      await db
+        .update(resume)
+        .set({ views: queriedResume.views + 1 })
+        .where(eq(resume.id, queriedResume.id))
+    }
+    return {
+      ...queriedResume,
+      data: queriedResume.data
+        ? ResumeSchema.parse(queriedResume.data)
+        : null,
+    }
+  })
+```
+
+---
+
+## createResume
+
+Creates a new resume with example data in the specified language and template.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="name" type="string" required>
+  Name for the new resume
+</ParamField>
+
+<ParamField path="language" type="enum" required>
+  Language for example data. Available languages:
+  - `en` - English
+  - `es` - Spanish
+  - `fr` - French
+  - `de` - German
+  - `ja` - Japanese
+  - `pt` - Portuguese
+  - `zh` - Chinese
+</ParamField>
+
+<ParamField path="template" type="enum">
+  Resume template. Defaults to `awesome`.
+  - `awesome`
+  - `modern`
+  - `professional`
+  - `bold`
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  The created resume object with generated ID and slug
+</ResponseField>
+
+### Behavior
+
+- Generates a UUIDv7 for the resume ID
+- Creates a unique slug based on user email and resume name
+- Initializes resume with example data for the selected language
+- Sets the specified template in the config
+
+### Errors
+
+- `INTERNAL_SERVER_ERROR` - Failed to create resume
+
+### Example
+
+```typescript
+const newResume = await client.createResume({
+  name: 'Software Engineer Resume',
+  language: 'en',
+  template: 'modern'
+})
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+createResume: protectedProcedure
+  .input(
+    z.object({
+      name: z.string(),
+      language: z.enum(Object.keys(exampleResumes) as [string, ...string[]]),
+      template: TemplateSchema.optional(),
+    }),
+  )
+  .handler(async ({ context, input }) => {
+    const { name, language, template = 'awesome' } = input
+    const exampleResume =
+      exampleResumes[language as keyof typeof exampleResumes]
+
+    const initialData = {
+      ...exampleResume,
+      config: {
+        ...exampleResume.config,
+        template,
+      },
+    }
+
+    const currentUser = context.session.user
+    const [createdResume] = await db
+      .insert(resume)
+      .values({
+        id: uuidv7(),
+        name,
+        userEmail: currentUser.email,
+        data: initialData,
+        slug: uniqueSlug(currentUser.email, name),
+      })
+      .returning()
+
+    if (!createdResume) {
+      throw new ORPCError('INTERNAL_SERVER_ERROR')
+    }
+
+    return createdResume
+  })
+```
+
+---
+
+## updateResume
+
+Updates the complete resume data.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="id" type="string" required>
+  Resume ID to update
+</ParamField>
+
+<ParamField path="data" type="IResume" required>
+  Complete resume data conforming to ResumeValidationSchema. See [Types](/api/types) for full schema.
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  The resume object before update (for reference)
+</ResponseField>
+
+### Behavior
+
+- Validates input data against ResumeValidationSchema
+- Updates `updatedAt` timestamp automatically
+- Only updates resumes owned by the authenticated user
+
+### Errors
+
+- `NOT_FOUND` - Resume does not exist or does not belong to user
+
+### Example
+
+```typescript
+await client.updateResume({
+  id: '01H2XMPL3K7N8Q9R',
+  data: {
+    config: { /* ... */ },
+    personalInfo: { /* ... */ },
+    sections: [ /* ... */ ]
+  }
+})
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+updateResume: protectedProcedure
+  .input(z.object({ id: z.string(), data: ResumeValidationSchema }))
+  .handler(async ({ context, input }) => {
+    const { id: resumeId, data } = input
+    const currentUser = context.session.user
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ id, userEmail }, { eq, and }) =>
+        and(eq(id, resumeId), eq(userEmail, currentUser.email)),
+    })
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    await db
+      .update(resume)
+      .set({ data, updatedAt: new Date() })
+      .where(eq(resume.id, resumeId))
+    return queriedResume
+  })
+```
+
+---
+
+## updateResumeName
+
+Updates only the resume name.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="id" type="string" required>
+  Resume ID to update
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  New name for the resume
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  The resume object before update
+</ResponseField>
+
+### Behavior
+
+- Updates only the name field
+- Updates `updatedAt` timestamp automatically
+- Does not modify the slug
+
+### Errors
+
+- `NOT_FOUND` - Resume does not exist or does not belong to user
+
+### Example
+
+```typescript
+await client.updateResumeName({
+  id: '01H2XMPL3K7N8Q9R',
+  name: 'Updated Resume Name'
+})
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+updateResumeName: protectedProcedure
+  .input(z.object({ id: z.string(), name: z.string() }))
+  .handler(async ({ context, input }) => {
+    const { id: resumeId, name } = input
+    const currentUser = context.session.user
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ id, userEmail }, { eq, and }) =>
+        and(eq(id, resumeId), eq(userEmail, currentUser.email)),
+    })
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    await db
+      .update(resume)
+      .set({ name, updatedAt: new Date() })
+      .where(eq(resume.id, resumeId))
+    return queriedResume
+  })
+```
+
+---
+
+## updateResumePublicStatus
+
+Toggles whether a resume is publicly accessible.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="id" type="string" required>
+  Resume ID to update
+</ParamField>
+
+<ParamField path="isPublic" type="boolean" required>
+  Whether the resume should be public
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  The updated resume object with new isPublic status
+</ResponseField>
+
+### Behavior
+
+- Updates `isPublic` flag
+- Updates `updatedAt` timestamp automatically
+- When public, resume becomes accessible via getResumeBySlug to anyone
+- When private, only owner can access
+
+### Errors
+
+- `NOT_FOUND` - Resume does not exist or does not belong to user
+
+### Example
+
+```typescript
+const updatedResume = await client.updateResumePublicStatus({
+  id: '01H2XMPL3K7N8Q9R',
+  isPublic: true
+})
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+updateResumePublicStatus: protectedProcedure
+  .input(z.object({ id: z.string(), isPublic: z.boolean() }))
+  .handler(async ({ context, input }) => {
+    const { id: resumeId, isPublic } = input
+    const currentUser = context.session.user
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ id, userEmail }, { eq, and }) =>
+        and(eq(id, resumeId), eq(userEmail, currentUser.email)),
+    })
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    await db
+      .update(resume)
+      .set({ isPublic, updatedAt: new Date() })
+      .where(eq(resume.id, resumeId))
+    const updatedResume = await db.query.resume.findFirst({
+      where: ({ id }, { eq }) => eq(id, resumeId),
+    })
+    return updatedResume!
+  })
+```
+
+---
+
+## deleteResume
+
+Permanently deletes a resume.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="id" type="string" required>
+  Resume ID to delete
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Always returns `true` on successful deletion
+</ResponseField>
+
+### Errors
+
+- `NOT_FOUND` - Resume does not exist or does not belong to user
+
+### Example
+
+```typescript
+await client.deleteResume({ 
+  id: '01H2XMPL3K7N8Q9R' 
+})
+// Returns { success: true }
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+deleteResume: protectedProcedure
+  .input(z.object({ id: z.string() }))
+  .handler(async ({ context, input }) => {
+    const { id: resumeId } = input
+    const currentUser = context.session.user
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ id, userEmail }, { eq, and }) =>
+        and(eq(id, resumeId), eq(userEmail, currentUser.email)),
+    })
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    await db.delete(resume).where(eq(resume.id, resumeId))
+    return { success: true }
+  })
+```
+
+---
+
+## duplicateResume
+
+Creates a copy of an existing resume with a new ID and name.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="id" type="string" required>
+  Resume ID to duplicate
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  The newly created resume copy with all data
+</ResponseField>
+
+### Behavior
+
+- Creates new resume with new UUIDv7 ID
+- Copies all resume data and thumbnail URL
+- Generates new unique slug
+- Names the copy as "[Original Name] copy" or "[Original Name] copy N" if duplicates exist
+- Increments suffix number to avoid naming conflicts
+
+### Errors
+
+- `NOT_FOUND` - Original resume does not exist or does not belong to user
+- `INTERNAL_SERVER_ERROR` - Failed to create duplicate
+
+### Example
+
+```typescript
+const duplicated = await client.duplicateResume({ 
+  id: '01H2XMPL3K7N8Q9R' 
+})
+// Returns new resume with name like "Software Engineer Resume copy"
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+duplicateResume: protectedProcedure
+  .input(z.object({ id: z.string() }))
+  .handler(async ({ context, input }) => {
+    const currentUser = context.session.user
+    const originalResume = await db.query.resume.findFirst({
+      where: ({ id, userEmail }, { eq, and }) =>
+        and(eq(id, input.id), eq(userEmail, currentUser.email)),
+    })
+    if (!originalResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+
+    const existingNames = new Set(
+      (
+        await db.query.resume.findMany({
+          where: ({ userEmail }, { eq }) => eq(userEmail, currentUser.email),
+          columns: { name: true },
+        })
+      ).map((entry) => entry.name),
+    )
+
+    const baseName = `${originalResume.name} copy`
+    let candidateName = baseName
+    let suffix = 2
+    while (existingNames.has(candidateName)) {
+      candidateName = `${baseName} ${suffix}`
+      suffix += 1
+    }
+
+    const [duplicatedResume] = await db
+      .insert(resume)
+      .values({
+        id: uuidv7(),
+        name: candidateName,
+        userEmail: currentUser.email,
+        data: originalResume.data,
+        slug: uniqueSlug(currentUser.email, candidateName),
+        thumbnailUrl: originalResume.thumbnailUrl,
+      })
+      .returning()
+
+    if (!duplicatedResume) {
+      throw new ORPCError('INTERNAL_SERVER_ERROR')
+    }
+
+    return {
+      ...duplicatedResume,
+      data: duplicatedResume.data
+        ? ResumeSchema.parse(duplicatedResume.data)
+        : null,
+    }
+  })
+```
+
+---
+
+## uploadThumbnail
+
+Uploads a thumbnail image for a resume.
+
+**Authentication:** Required (protected)
+
+### Input
+
+<ParamField path="resumeId" type="string" required>
+  Resume ID to upload thumbnail for
+</ParamField>
+
+<ParamField path="thumbnail" type="string" required>
+  Base64 encoded image data (including data URI prefix like `data:image/png;base64,...`)
+</ParamField>
+
+### Response
+
+<ResponseField name="thumbnailUrl" type="string">
+  URL to the uploaded thumbnail in MinIO/S3 storage
+</ResponseField>
+
+### Behavior
+
+- Strips data URI prefix from base64 string
+- Converts base64 to buffer
+- Uploads to MinIO/S3 storage
+- Updates resume with thumbnail URL
+- Updates `updatedAt` timestamp
+
+### Errors
+
+- `NOT_FOUND` - Resume does not exist or does not belong to user
+
+### Example
+
+```typescript
+const result = await client.uploadThumbnail({
+  resumeId: '01H2XMPL3K7N8Q9R',
+  thumbnail: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg...'
+})
+// Returns { thumbnailUrl: 'https://s3.example.com/...' }
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+uploadThumbnail: protectedProcedure
+  .input(
+    z.object({
+      resumeId: z.string(),
+      thumbnail: z.string(), // base64 encoded image data
+    }),
+  )
+  .handler(async ({ context, input }) => {
+    const { resumeId, thumbnail } = input
+    const currentUser = context.session.user
+
+    // Verify resume belongs to user
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ id, userEmail }, { eq, and }) =>
+        and(eq(id, resumeId), eq(userEmail, currentUser.email)),
+    })
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+
+    // Convert base64 to buffer
+    const base64Data = thumbnail.replace(/^data:image\/\w+;base64,/, '')
+    const buffer = Buffer.from(base64Data, 'base64')
+
+    // Upload thumbnail to MinIO
+    const thumbnailUrl = await uploadThumbnailToS3(resumeId, buffer)
+
+    // Update resume with thumbnail URL
+    await db
+      .update(resume)
+      .set({ thumbnailUrl, updatedAt: new Date() })
+      .where(eq(resume.id, resumeId))
+
+    return { thumbnailUrl }
+  })
+```
+
+---
+
+## setDownloadCount
+
+Increments the download counter for a public resume.
+
+**Authentication:** Optional (public)
+
+### Input
+
+<ParamField path="id" type="string" required>
+  Resume ID to increment download count for
+</ParamField>
+
+### Response
+
+<ResponseField name="resume" type="object">
+  The resume object (before increment)
+</ResponseField>
+
+### Behavior
+
+- Public resumes: Download count is incremented
+- Private resumes: Only accessible to owner, count not incremented
+- Throws `FORBIDDEN` if trying to access someone else's private resume
+
+### Errors
+
+- `NOT_FOUND` - Resume does not exist
+- `FORBIDDEN` - Resume is private and user is not the owner
+
+### Example
+
+```typescript
+await client.setDownloadCount({ 
+  id: '01H2XMPL3K7N8Q9R' 
+})
+```
+
+### Source
+
+```typescript packages/api/src/routers/index.ts
+setDownloadCount: publicProcedure
+  .input(z.object({ id: z.string() }))
+  .handler(async ({ context, input }) => {
+    const { id: resumeId } = input
+    const queriedResume = await db.query.resume.findFirst({
+      where: ({ id }, { eq }) => eq(id, resumeId),
+    })
+    if (!queriedResume) {
+      throw new ORPCError('NOT_FOUND')
+    }
+    if (
+      !queriedResume.isPublic &&
+      queriedResume.userEmail !== context.session?.user.email
+    ) {
+      throw new ORPCError('FORBIDDEN')
+    }
+    // Only increment downloads for public resumes
+    if (queriedResume.isPublic) {
+      await db
+        .update(resume)
+        .set({ downloads: queriedResume.downloads + 1 })
+        .where(eq(resume.id, resumeId))
+    }
+    return queriedResume
+  })
+```

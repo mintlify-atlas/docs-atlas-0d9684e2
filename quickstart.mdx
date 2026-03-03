@@ -1,80 +1,405 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Vitaes running locally in under 5 minutes
 ---
 
-## Get started in three steps
+# Quickstart Guide
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through setting up Vitaes locally and creating your first resume. You'll be up and running in under 5 minutes.
 
-### Step 1: Set up your local environment
+## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+Before you begin, make sure you have the following installed:
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- [Bun](https://bun.sh) (recommended) or Node.js 18+
+- [PostgreSQL](https://www.postgresql.org/) database
+- [Git](https://git-scm.com/)
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  While Vitaes is optimized for Bun, it also works with npm and pnpm. Commands are provided for all package managers.
 </Note>
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    First, clone the Vitaes repository to your local machine:
+
+    ```bash
+    git clone https://github.com/diegopluna/vitaes.git
+    cd vitaes
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all project dependencies using your preferred package manager:
+
+    <CodeGroup>
+      ```bash bun
+      bun install
+      ```
+
+      ```bash npm
+      npm install
+      ```
+
+      ```bash pnpm
+      pnpm install
+      ```
+    </CodeGroup>
+
+    <Info>
+      The installation process may take a minute or two as it downloads all required packages for the monorepo.
+    </Info>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Set up your environment variables for the server. Copy the example file and fill in your values:
+
+    ```bash
+    cp apps/server/.env.example apps/server/.env
+    ```
+
+    Open `apps/server/.env` and configure the following required variables:
+
+    ```bash .env
+    # Database connection string
+    DATABASE_URL=postgresql://user:password@localhost:5432/vitaes
+
+    # Authentication (generate a random secret)
+    BETTER_AUTH_SECRET=your-secret-key-here
+    BETTER_AUTH_URL=http://localhost:3000
+
+    # CORS configuration
+    CORS_ORIGIN=http://localhost:3001
+
+    # OAuth providers (optional - for Google/GitHub login)
+    GOOGLE_CLIENT_ID=
+    GOOGLE_CLIENT_SECRET=
+    GITHUB_CLIENT_ID=
+    GITHUB_CLIENT_SECRET=
+
+    # MinIO storage (optional - for resume thumbnails)
+    MINIO_ENDPOINT=
+    MINIO_PUBLIC_ENDPOINT=
+    MINIO_ACCESS_KEY=
+    MINIO_SECRET_KEY=
+    MINIO_BUCKET=
+    ```
+
+    <Warning>
+      Make sure your PostgreSQL database is running and the `DATABASE_URL` is correct before proceeding.
+    </Warning>
+  </Step>
+
+  <Step title="Set up the database">
+    Apply the database schema to your PostgreSQL database:
+
+    <CodeGroup>
+      ```bash bun
+      bun db:push
+      ```
+
+      ```bash npm
+      npm run db:push
+      ```
+
+      ```bash pnpm
+      pnpm db:push
+      ```
+    </CodeGroup>
+
+    This will create all necessary tables in your database, including:
+    - `resume` - Stores resume data, metadata, and public sharing settings
+    - `user` - User accounts and authentication
+    - `session` - User sessions
+
+    <Tip>
+      Want to explore your database? Run `bun db:studio` to open Drizzle Studio, a visual database explorer.
+    </Tip>
+  </Step>
+
+  <Step title="Start the development server">
+    Start both the frontend and backend in development mode:
+
+    <CodeGroup>
+      ```bash bun
+      bun dev
+      ```
+
+      ```bash npm
+      npm run dev
+      ```
+
+      ```bash pnpm
+      pnpm dev
+      ```
+    </CodeGroup>
+
+    This command starts:
+    - **Web app** at [http://localhost:3001](http://localhost:3001)
+    - **API server** at [http://localhost:3000](http://localhost:3000)
+
+    <Info>
+      The dev server includes hot module reloading, so your changes will be reflected immediately.
+    </Info>
+  </Step>
+</Steps>
+
+## Creating Your First Resume
+
+Now that Vitaes is running, let's create your first resume:
+
+<Steps>
+  <Step title="Sign up for an account">
+    1. Open [http://localhost:3001](http://localhost:3001) in your browser
+    2. Click **Sign In** in the top navigation
+    3. Create a new account using email or OAuth (Google/GitHub)
+
+    After signing in, you'll be redirected to your dashboard.
+  </Step>
+
+  <Step title="Create a new resume">
+    On your dashboard, you'll see:
+    - **Total resumes** - Number of resumes you've created
+    - **Public resumes** - How many are publicly shared
+    - **Total views** - Views across all public resumes
+    - **Total downloads** - Download count for public resumes
+
+    Click the **Create Resume** button to start:
+
+    1. Enter a name for your resume (e.g., "Software Engineer Resume")
+    2. Choose your preferred template:
+       - **Awesome** - Clean and modern with color accents
+       - **Modern** - Contemporary design with bold typography
+       - **Professional** - Classic and traditional layout
+       - **Bold** - Eye-catching design for creative fields
+    3. Select your language (EN, ES, FR, DE, JA, PT, ZH)
+    4. Click **Create**
+
+    <Note>
+      Vitaes automatically populates your new resume with example data in your selected language, making it easy to see the structure and customize it with your own information.
+    </Note>
+  </Step>
+
+  <Step title="Edit your resume">
+    You'll be taken to the resume builder, which consists of two main panels:
+
+    **Left Panel - Editor**
+    - Personal Information - Name, position, contact details, social profiles
+    - Sections - Work experience, education, skills, certificates, custom sections
+    - Theme - Colors, fonts, header alignment, section highlighting
+
+    **Right Panel - Live Preview**
+    - Real-time preview of your resume
+    - Updates instantly as you make changes
+    - WYSIWYG - What you see is what you'll export
+
+    Start by updating the **Personal Information** section:
+    ```typescript
+    // Example personal info structure
+    {
+      firstName: 'Kendall',
+      lastName: 'Roy',
+      position: 'Co-CEO',
+      address: 'New York, NY',
+      quote: "Success is not given, it's earned.",
+      socials: [
+        { platform: 'mobile', value: '123-456-7890' },
+        { platform: 'email', value: 'kendallroy@waystar.com' },
+        { platform: 'linkedin', value: 'kendallroy' },
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Add and organize sections">
+    Vitaes supports multiple section types:
+
+    **Timeline Sections** (for work experience, education, certificates)
+    ```typescript
+    {
+      type: 'timeline',
+      entries: [
+        {
+          position: 'Senior Software Engineer',
+          title: 'Tech Company',
+          location: 'San Francisco, CA',
+          date: '2020-01-01 — present',
+          items: [
+            'Led development of core platform features',
+            'Mentored junior developers',
+          ]
+        }
+      ]
+    }
+    ```
+
+    **List Sections** (for skills, awards, projects)
+    ```typescript
+    {
+      type: 'list',
+      structure: {
+        type: 'grouped',
+        subsections: [
+          {
+            title: 'Programming Languages',
+            items: [
+              { title: 'TypeScript' },
+              { title: 'Python' },
+            ]
+          }
+        ]
+      }
+    }
+    ```
+
+    **Text Sections** (for summary, objective)
+    ```typescript
+    {
+      type: 'text',
+      content: 'Experienced software engineer with a passion for building scalable applications...'
+    }
+    ```
+
+    Drag and drop sections to reorder them in your resume.
+  </Step>
+
+  <Step title="Customize the theme">
+    Switch to the **Theme** tab to customize:
+
+    - **Template** - Switch between awesome, modern, professional, bold
+    - **Theme Color** - Choose from preset color schemes
+    - **Header Alignment** - Left, center, or right
+    - **Section Highlighting** - Enable/disable colored section headers
+    - **Font Size** - Adjust for readability
+    - **Page Size** - A4 or Letter
+    - **Footer** - Add page numbers or custom text
+  </Step>
+
+  <Step title="Export and share">
+    Once you're happy with your resume:
+
+    **Export as PDF**
+    - Click the download button in the preview panel
+    - Your resume will be generated as a professional PDF
+
+    **Share publicly**
+    - Go back to your dashboard
+    - Toggle the resume to **Public**
+    - Click **Share** to get your public URL: `http://localhost:3001/view/your-custom-slug`
+    - Anyone with the link can view and download your resume
+    - Track views and downloads from your dashboard
+
+    <Tip>
+      Public resumes have a custom slug based on your email and resume name. Views and downloads are automatically tracked for public resumes.
+    </Tip>
+  </Step>
+</Steps>
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card
+    title="Explore Templates"
+    icon="palette"
+    href="/features/templates"
+  >
+    Learn about the four professional templates and when to use each one
+  </Card>
+  <Card
+    title="Customization Guide"
+    icon="sliders"
+    href="/features/customization"
+  >
+    Deep dive into theme customization and advanced options
+  </Card>
+  <Card
+    title="Database Schema"
+    icon="database"
+    href="/development/database"
+  >
+    Understand the database structure and relationships
+  </Card>
+  <Card
+    title="API Documentation"
+    icon="code"
+    href="/api/overview"
+  >
+    Explore the type-safe API endpoints
+  </Card>
+</CardGroup>
+
+## Additional Commands
+
+Here are some useful commands for development:
+
+```bash
+# Start only the web app
+bun dev:web
+
+# Start only the API server
+bun dev:server
+
+# Check TypeScript types across all packages
+bun check-types
+
+# Open Drizzle Studio (visual database explorer)
+bun db:studio
+
+# Generate database migration files
+bun db:generate
+
+# Build for production
+bun build
+```
+
+<Warning>
+  If you encounter database connection errors, make sure PostgreSQL is running and your `DATABASE_URL` in `.env` is correct.
+</Warning>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Database connection failed">
+    Ensure PostgreSQL is running and the `DATABASE_URL` in `apps/server/.env` is correct:
+    
+    ```bash
+    # Check if PostgreSQL is running
+    psql -U postgres -c "SELECT version();"
+    
+    # Correct format:
+    DATABASE_URL=postgresql://username:password@localhost:5432/database_name
+    ```
+  </Accordion>
+
+  <Accordion title="OAuth login not working">
+    If you haven't configured OAuth providers (Google/GitHub), you can still use email authentication. OAuth setup is optional for local development.
+    
+    To enable OAuth:
+    1. Create OAuth apps in Google Cloud Console and/or GitHub Developer Settings
+    2. Add the client ID and secret to `apps/server/.env`
+    3. Restart the server
+  </Accordion>
+
+  <Accordion title="Port already in use">
+    If ports 3000 or 3001 are already in use, you can change them in the respective app configurations:
+    - Web: `apps/web/vite.config.ts`
+    - Server: `apps/server/src/index.ts`
+  </Accordion>
+
+  <Accordion title="MinIO/thumbnail errors">
+    Thumbnail storage via MinIO is optional. If you see errors related to thumbnails, you can:
+    - Set up a local MinIO instance
+    - Use a cloud S3-compatible service
+    - Or simply ignore thumbnail features during development
+  </Accordion>
+</AccordionGroup>
+
+## Need Help?
+
+If you run into any issues:
+
+- Check the [Architecture guide](/development/architecture) to understand the project structure
+- Review the [Database documentation](/development/database) for schema details
+- Open an issue on [GitHub](https://github.com/diegopluna/vitaes)
