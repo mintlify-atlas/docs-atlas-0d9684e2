@@ -18,6 +18,60 @@ All endpoints may throw `ORPCError` with the following codes:
 
 ---
 
+## healthCheck
+
+Simple health check endpoint to verify the API is running.
+
+**Authentication:** Not required (public)
+
+### Response
+
+<ResponseField name="status" type="string">
+  Returns `"OK"` if the service is healthy
+</ResponseField>
+
+### Example
+
+```typescript
+const status = await client.healthCheck()
+// Returns: "OK"
+```
+
+```typescript packages/api/src/routers/index.ts
+healthCheck: publicProcedure.handler(() => {
+  return 'OK'
+})
+```
+
+---
+
+## helloWorld
+
+Simple test endpoint that returns a greeting message.
+
+**Authentication:** Not required (public)
+
+### Response
+
+<ResponseField name="message" type="string">
+  Returns `"Hello World"`
+</ResponseField>
+
+### Example
+
+```typescript
+const message = await client.helloWorld()
+// Returns: "Hello World"
+```
+
+```typescript packages/api/src/routers/index.ts
+helloWorld: publicProcedure.handler(() => {
+  return 'Hello World'
+})
+```
+
+---
+
 ## listResumes
 
 Retrieves all resumes belonging to the authenticated user, ordered by most recently updated.
