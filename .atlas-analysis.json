@@ -1,0 +1,91 @@
+{
+  "projectType": "saas",
+  "projectName": "Vitaes",
+  "projectDescription": "A modern, type-safe resume builder with customizable templates and public sharing",
+  "theme": "palm",
+  "primaryColor": "#2563eb",
+  "lightColor": "#60a5fa",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/resume-builder",
+              "features/templates",
+              "features/customization",
+              "features/sharing",
+              "features/internationalization"
+            ]
+          },
+          {
+            "group": "Developer Guide",
+            "pages": [
+              "development/setup",
+              "development/architecture",
+              "development/database",
+              "development/deployment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/resumes",
+              "api/types"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Visual resume builder with drag-and-drop sections",
+    "Multiple professional templates (awesome, modern, professional, bold)",
+    "Type-safe API with end-to-end TypeScript",
+    "Public resume sharing with custom slugs",
+    "Multi-language support (EN, ES, FR, DE, JA, PT, ZH)",
+    "Real-time preview with PDF export",
+    "User authentication and dashboard",
+    "Theme customization and color schemes"
+  ],
+  "publicApiSurface": [
+    "listResumes",
+    "getResumeById",
+    "getResumeBySlug",
+    "createResume",
+    "updateResume",
+    "updateResumeName",
+    "updateResumePublicStatus",
+    "deleteResume",
+    "duplicateResume",
+    "uploadThumbnail",
+    "setDownloadCount",
+    "ResumeSchema",
+    "PersonalInfoSchema",
+    "SectionSchema",
+    "TemplateSchema",
+    "SocialProfileSchema"
+  ]
+}
